@@ -36,6 +36,8 @@ class Finding:
     suggested_fix: str
     is_heuristic: bool
     cwe: Optional[str] = None  # Populated only if the scanner (e.g. Bandit) provides it
+    language: Optional[str] = None
+    snippet: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert finding to standard dictionary."""
@@ -56,8 +58,10 @@ class Finding:
             confidence=data["confidence"],
             description=str(data["description"]),
             suggested_fix=str(data["suggested_fix"]),
-            is_heuristic=bool(data["is_heuristic"]),
+            is_heuristic=_parse_bool(data["is_heuristic"], "is_heuristic"),
             cwe=data.get("cwe"),
+            language=data.get("language"),
+            snippet=data.get("snippet"),
         )
 
 
@@ -75,6 +79,7 @@ class FileMetrics:
     bug_count: int
     security_count: int
     quality_count: int
+    language: str = "Other"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -92,6 +97,27 @@ class FileMetrics:
             bug_count=int(data["bug_count"]),
             security_count=int(data["security_count"]),
             quality_count=int(data["quality_count"]),
+            language=str(data.get("language", "Other")),
+        )
+
+
+@dataclass
+class LanguageStat:
+    """File and line counts for one detected programming language."""
+
+    files: int
+    loc: int
+    percentage: float
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> LanguageStat:
+        return cls(
+            files=int(data["files"]),
+            loc=int(data["loc"]),
+            percentage=float(data["percentage"]),
         )
 
 
@@ -132,6 +158,7 @@ class AIReview:
     disclaimer: str = (
         "AI-generated suggestion. Review, verify, and test thoroughly before applying."
     )
+    isValidSyntax: Optional[bool] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -147,6 +174,11 @@ class AIReview:
             corrected_snippet=str(data.get("corrected_snippet", "")),
             change_explanation=str(data.get("change_explanation", "")),
             prevention=str(data.get("prevention", "")),
+            isValidSyntax=(
+                _parse_bool(data["isValidSyntax"], "isValidSyntax")
+                if "isValidSyntax" in data
+                else None
+            ),
             disclaimer=str(
                 data.get(
                     "disclaimer",
@@ -176,6 +208,8 @@ class ScanResult:
     risk_breakdown: Dict[str, float] = field(default_factory=dict)
     duration_seconds: float = 0.0
     warnings: List[str] = field(default_factory=list)
+    languages_detected: Dict[str, LanguageStat] = field(default_factory=dict)
+    logs: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -187,6 +221,10 @@ class ScanResult:
             "timestamp": self.timestamp,
             "settings_used": self.settings_used,
             "files": self.files,
+            "languages_detected": {
+                language: stat.to_dict()
+                for language, stat in self.languages_detected.items()
+            },
             "findings": [f.to_dict() for f in self.findings],
             "file_metrics": [m.to_dict() for m in self.file_metrics],
             "predictions": [p.to_dict() for p in self.predictions],
@@ -195,6 +233,7 @@ class ScanResult:
             "risk_breakdown": {k: round(v, 2) for k, v in self.risk_breakdown.items()},
             "duration_seconds": round(self.duration_seconds, 2),
             "warnings": self.warnings,
+            "logs": self.logs,
         }
 
     def to_json(self, indent: Optional[int] = 2) -> str:
@@ -212,6 +251,10 @@ class ScanResult:
             timestamp=str(data["timestamp"]),
             settings_used=dict(data.get("settings_used", {})),
             files=list(data.get("files", [])),
+            languages_detected={
+                language: LanguageStat.from_dict(stat)
+                for language, stat in data.get("languages_detected", {}).items()
+            },
             findings=[Finding.from_dict(f) for f in data.get("findings", [])],
             file_metrics=[FileMetrics.from_dict(m) for m in data.get("file_metrics", [])],
             predictions=[FilePrediction.from_dict(p) for p in data.get("predictions", [])],
@@ -220,9 +263,16 @@ class ScanResult:
             risk_breakdown={k: float(v) for k, v in data.get("risk_breakdown", {}).items()},
             duration_seconds=float(data.get("duration_seconds", 0.0)),
             warnings=list(data.get("warnings", [])),
+            logs=list(data.get("logs", [])),
         )
 
     @classmethod
     def from_json(cls, json_str: str) -> ScanResult:
         """Deserialize scan result from JSON string."""
         return cls.from_dict(json.loads(json_str))
+
+
+def _parse_bool(value: Any, field_name: str) -> bool:
+    if not isinstance(value, bool):
+        raise TypeError(f"{field_name} must be a boolean")
+    return value
