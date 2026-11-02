@@ -37,6 +37,22 @@ def test_analysis_requires_firebase_bearer_token() -> None:
     assert response.json()["error"]["code"] == "unauthorized"
 
 
+def test_ai_endpoints_require_firebase_bearer_token() -> None:
+    requests = (
+        ("/api/ai/review", {"finding": {}, "source_snippet": ""}),
+        (
+            "/api/ai/assistant",
+            {"question": "Summarize this scan.", "scan_summary": {"findings": []}},
+        ),
+    )
+
+    for path, body in requests:
+        response = client.post(path, json=body)
+        assert response.status_code == 401
+        assert response.json()["success"] is False
+        assert response.json()["error"]["code"] == "unauthorized"
+
+
 def test_analysis_validates_unsafe_paths() -> None:
     main.app.dependency_overrides[get_current_user] = lambda: {"uid": "verified-user"}
     try:
