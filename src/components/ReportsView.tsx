@@ -41,23 +41,25 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ currentScan }) => {
 ---
 
 ## Executive Summary
-- **Overall Risk Score:** **${currentScan.risk_score} / 100** (${currentScan.risk_score > 66 ? 'HIGH RISK' : currentScan.risk_score > 33 ? 'MEDIUM RISK' : 'LOW RISK'})
+- **Overall Risk Score:** **${currentScan.risk_score} / 100** (${currentScan.risk_label || (currentScan.risk_score >= 80 ? 'CRITICAL' : currentScan.risk_score >= 60 ? 'HIGH' : currentScan.risk_score >= 30 ? 'MEDIUM' : 'LOW')})
 - **Code Quality Score:** **${currentScan.quality_score} / 100**
-- **Analyzed Files:** ${currentScan.files.length} source code files
-- **Detected Languages:** ${Object.entries(currentScan.languages_detected || {}).map(([l, s]) => `${l} (${s.percentage}%)`).join(', ') || 'Polyglot'}
-- **Total Findings Detected:** ${currentScan.findings.length}
-  - Security Vulnerabilities (Bandit/Semgrep): ${secFindings.length}
-  - AST Bug Candidates: ${bugFindings.length}
-  - Code Quality Deficits: ${qualFindings.length}
+- **Repository Files:** ${currentScan.repository_file_count ?? currentScan.total_files_scanned ?? currentScan.files.length}
+**Python Files Scanned:** ${currentScan.total_files_scanned ?? currentScan.python_file_count ?? currentScan.files.length}
+- **Analyzed Languages:** ${Object.entries(currentScan.languages_detected || {}).map(([l, s]) => `${l} (${s.percentage}%)`).join(', ') || 'None'}
+- **Total Findings Detected:** ${currentScan.total_findings ?? currentScan.findings.length}
+  - Findings included in this report: ${currentScan.findings.length}${currentScan.findings_truncated ? ' (highest severity first; remaining finding details omitted to keep the report within storage limits)' : ''}
+  - Bandit Security Findings: ${currentScan.source_counts?.security ?? secFindings.length}
+  - AST Bug Candidates: ${currentScan.source_counts?.bug ?? bugFindings.length}
+  - Code Quality Deficits: ${currentScan.source_counts?.quality ?? qualFindings.length}
 
 ---
 
-## Risk Factor Breakdown
-- **Security Vulnerabilities (40% Weight):** ${currentScan.risk_breakdown?.security || 0} / 100
-- **AST Bug Density (20% Weight):** ${currentScan.risk_breakdown?.bugs || 0} / 100
-- **Machine Learning Risk (15% Weight):** ${currentScan.risk_breakdown?.ml_risk || 0} / 100
-- **Cyclomatic Complexity (15% Weight):** ${currentScan.risk_breakdown?.complexity || 0} / 100
-- **Quality Deficits (10% Weight):** ${currentScan.risk_breakdown?.quality || 0} / 100
+## Rule-Based Risk Factors
+- **Security findings:** ${currentScan.risk_breakdown?.security || 0} / 100
+- **Bug findings:** ${currentScan.risk_breakdown?.bugs || 0} / 100
+- **Cyclomatic complexity and nested loops:** ${currentScan.risk_breakdown?.complexity || 0} / 100
+- **Quality deficits:** ${currentScan.risk_breakdown?.quality || 0} / 100
+- **Risk rationale:** ${(currentScan.risk_reasons || []).join('; ') || 'No risk reasons were reported.'}
 
 ---
 
@@ -84,15 +86,25 @@ ${bugFindings.length === 0 ? '_No AST bug candidates detected._' : bugFindings.m
 
 ---
 
-## Machine Learning Risk Predictions (RandomForest)
-| File Path | Risk Tier | P(LOW) | P(MED) | P(HIGH) | Top Factors |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-${currentScan.predictions.map(p => `| \`${p.path}\` | **${p.risk_label}** | ${(p.probabilities.LOW * 100).toFixed(0)}% | ${(p.probabilities.MEDIUM * 100).toFixed(0)}% | ${(p.probabilities.HIGH * 100).toFixed(0)}% | ${p.top_features.join(', ')} |`).join('\n')}
+## Rule-Based Per-File Risk Estimates
+| File Path | Risk Score | Risk Tier | Contributing Factors |
+| :--- | ---: | :--- | :--- |
+${currentScan.predictions.map(p => `| \`${p.path}\` | ${p.risk_score}/100 | **${p.risk_label}** | ${p.top_features.join(', ')} |`).join('\n')}
+
+---
+
+## Gemini AI Recommendations
+${currentScan.ai_review?.status === 'available' ? [
+  currentScan.ai_review.repository_review || '',
+  ...(currentScan.ai_review.recommendations || []).map(item =>
+    `- **${item.rule_id}:** ${item.explanation}\n  - Suggested code: \`${item.suggested_code.replace(/`/g, '\\`')}\`\n  - Best practice: ${item.best_practice}`
+  ),
+].filter(Boolean).join('\n\n') || '_Gemini returned no recommendations._' : `AI review unavailable${currentScan.ai_review?.reason ? `: ${currentScan.ai_review.reason}` : ' (not requested or not configured).'}`}
 
 ---
 
 ## Disclaimer & Limitations
-This audit was produced automatically using static AST rules, Bandit, Pylint heuristics, and a RandomForestClassifier trained on an illustrative bootstrap dataset. Findings are candidate alerts and do not represent a formal certified penetration test. Always review and test AI remediation suggestions before deploying to production.
+This report contains Python AST and Pyflakes results, Bandit security findings, and a transparent rule-based risk baseline. No trained ML model is used. Static-analysis findings may require human validation and do not represent a formal penetration test. Review and test AI-generated recommendations before applying them.
 `;
   };
 

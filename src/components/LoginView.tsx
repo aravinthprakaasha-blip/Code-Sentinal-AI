@@ -270,10 +270,10 @@ export const LoginView: React.FC<LoginViewProps> = ({
           <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
             <div>
               <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Security Engine</p>
-              <p className="text-2xl font-bold text-slate-100 mt-1">Multi-AST</p>
+              <p className="text-2xl font-bold text-slate-100 mt-1">Python Analysis</p>
               <p className="text-[11px] text-emerald-400 mt-1 flex items-center space-x-1">
                 <Shield className="w-3 h-3" />
-                <span>Go, Rust, JS/TS, Py, Java</span>
+                <span>AST, Pyflakes, and Bandit</span>
               </p>
             </div>
             <div className="w-12 h-12 rounded-xl bg-emerald-950/60 border border-emerald-800/50 flex items-center justify-center text-emerald-400">
@@ -284,10 +284,10 @@ export const LoginView: React.FC<LoginViewProps> = ({
           <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
             <div>
               <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Auto-Fix Engine</p>
-              <p className="text-2xl font-bold text-slate-100 mt-1">Active</p>
+              <p className="text-2xl font-bold text-slate-100 mt-1">Suggestions</p>
               <p className="text-[11px] text-blue-400 mt-1 flex items-center space-x-1">
                 <Cpu className="w-3 h-3" />
-                <span>In-Place Code Correction</span>
+                <span>Reviewable correction templates</span>
               </p>
             </div>
             <div className="w-12 h-12 rounded-xl bg-blue-950/60 border border-blue-800/50 flex items-center justify-center text-blue-400">
@@ -319,7 +319,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-cyan-400 transition-colors" />
                 </div>
                 <p className="text-xs text-slate-400 mt-1">
-                  Scan any public Git repository or uploaded project archive across all supported programming languages.
+                  Scan a public GitHub repository or uploaded Python source with server-side analysis.
                 </p>
               </div>
             </button>
@@ -334,7 +334,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
               <div className="flex-1">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-slate-200 group-hover:text-cyan-300 transition-colors">
-                    Self Text & Auto-Fix Studio
+                    Python Sandbox & Suggestions
                   </h3>
                   <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-cyan-400 transition-colors" />
                 </div>
@@ -367,7 +367,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
               </span>
             </h1>
             <p className="text-sm text-slate-400 leading-relaxed">
-              Enterprise polyglot static analysis, AST vulnerability detection, and automated 1-click remediation.
+              Authenticated Python static analysis with server-side security scanning and explainable risk results.
             </p>
           </div>
 
@@ -389,9 +389,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 <ShieldAlert className="w-4 h-4" />
               </div>
               <div>
-                <p className="text-xs font-semibold text-slate-200">Polyglot Multi-Language Analysis</p>
+                <p className="text-xs font-semibold text-slate-200">Python Static Analysis</p>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Deep AST inspection for Python, Go, Rust, JavaScript, TypeScript, Java, and C/C++.
+                  Server-side Python AST, Pyflakes, and Bandit checks for public repositories or uploaded source.
                 </p>
               </div>
             </div>

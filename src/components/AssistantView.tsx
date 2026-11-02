@@ -30,7 +30,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ currentScan }) => 
     'Which file is riskiest?',
     'How many security vulnerabilities were found?',
     'Explain the Code Quality formula',
-    'How does the ML model predict risk?',
+    'How is the rule-based risk score calculated?',
   ];
 
   const handleSend = async (textToSend?: string) => {
@@ -95,7 +95,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ currentScan }) => 
           <span>AI Review Assistant</span>
         </h1>
         <p className="text-xs text-slate-400 mt-1">
-          Chat with Google Gemini grounded in real scan data. Ask about bugs, CVE/CWE details, and architecture.
+          Ask questions grounded in this scan. Gemini responses are generated on the secure backend when configured.
         </p>
       </div>
 

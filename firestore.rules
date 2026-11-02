@@ -62,11 +62,6 @@ service cloud.firestore {
         && data.userId == userId;
     }
 
-    // Connection testing endpoint
-    match /test/connection {
-      allow read: if true;
-    }
-
     // User Profile Documents
     match /users/{userId} {
       allow get: if isOwner(userId) && isValidId(userId);

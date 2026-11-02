@@ -1,10 +1,10 @@
 /**
  * @file src/components/MLRiskView.tsx
- * Machine Learning Risk Prediction view with feature importances and model transparency notes.
+ * Rule-based risk assessment view with per-file scores and transparent factors.
  */
 
 import React from 'react';
-import { Cpu, AlertTriangle, Info, CheckCircle2, BarChart2 } from 'lucide-react';
+import { Cpu, Info, BarChart2 } from 'lucide-react';
 import { ScanResult } from '../types';
 
 interface MLRiskViewProps {
@@ -16,30 +16,21 @@ export const MLRiskView: React.FC<MLRiskViewProps> = ({ currentScan }) => {
     return (
       <div className="p-12 text-center text-slate-400 bg-slate-900/50 rounded-2xl border border-slate-800">
         <Cpu className="w-12 h-12 mx-auto text-slate-600 mb-3" />
-        <h3 className="text-base font-semibold text-slate-200">No ML Predictions Available</h3>
+        <h3 className="text-base font-semibold text-slate-200">No Risk Assessment Available</h3>
         <p className="text-xs text-slate-500 mt-1">Execute a scan to generate file-level risk predictions.</p>
       </div>
     );
   }
-
-  const featureImportances = [
-    { feature: 'Security Warning Count', importance: 0.32, color: 'bg-rose-500' },
-    { feature: 'AST Bug Finding Count', importance: 0.22, color: 'bg-amber-500' },
-    { feature: 'Cyclomatic Complexity', importance: 0.16, color: 'bg-blue-500' },
-    { feature: 'Max Nesting Depth', importance: 0.12, color: 'bg-cyan-500' },
-    { feature: 'Nested Loop Count', importance: 0.10, color: 'bg-indigo-500' },
-    { feature: 'Non-Empty Lines of Code (LOC)', importance: 0.08, color: 'bg-emerald-500' },
-  ];
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-bold text-slate-100 flex items-center space-x-2">
           <Cpu className="w-5 h-5 text-purple-400" />
-          <span>Machine Learning Risk Engine</span>
+          <span>Rule-Based Risk Assessment</span>
         </h1>
         <p className="text-xs text-slate-400 mt-1">
-          RandomForestClassifier predicting per-file risk categories from 9 quantitative AST and static analysis features.
+          A deterministic baseline scores real scanner findings, cyclomatic complexity, and nested loops. It is not a trained ML model.
         </p>
       </div>
 
@@ -48,10 +39,10 @@ export const MLRiskView: React.FC<MLRiskViewProps> = ({ currentScan }) => {
         <Info className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
         <div className="space-y-1">
           <p className="font-semibold text-purple-100">
-            Methodological Transparency: Illustrative Bootstrap Dataset
+            Methodological Transparency: Rule-Based Baseline
           </p>
           <p className="text-purple-300 leading-relaxed text-[11px]">
-            The model is trained via stratified split with <code>class_weight=&quot;balanced&quot;</code> on an illustrative bootstrap dataset combining structural complexity metrics and analyzer signals. Because analyzer outputs are included as features, predictions reflect correlated multi-factor risk and are not absolute ground truth.
+            Risk scores are deterministic heuristics based on confirmed Bandit findings, bug findings, and complexity metrics. They are prioritization estimates, not calibrated probabilities or proof that a defect is exploitable.
           </p>
         </div>
       </div>
@@ -60,9 +51,9 @@ export const MLRiskView: React.FC<MLRiskViewProps> = ({ currentScan }) => {
       <div className="rounded-2xl bg-slate-900/90 border border-slate-800 overflow-hidden shadow-xl">
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <span className="text-xs font-semibold uppercase tracking-wider text-slate-300">
-            Per-File Predicted Risk ({currentScan.predictions.length} files)
+            Per-File Risk Estimates ({currentScan.predictions.length} files)
           </span>
-          <span className="text-xs text-slate-400">RandomForest Model (v1.0)</span>
+          <span className="text-xs text-slate-400">Transparent rule baseline</span>
         </div>
 
         <div className="overflow-x-auto">
@@ -71,14 +62,14 @@ export const MLRiskView: React.FC<MLRiskViewProps> = ({ currentScan }) => {
               <tr>
                 <th className="p-3">File Path</th>
                 <th className="p-3">Predicted Risk</th>
-                <th className="p-3">Class Probabilities (L / M / H)</th>
+                <th className="p-3">Rule Score</th>
                 <th className="p-3">Top Contributing Factors</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono text-slate-300">
               {currentScan.predictions.map((p) => {
                 const labelColor =
-                  p.risk_label === 'HIGH'
+                  p.risk_label === 'CRITICAL' || p.risk_label === 'HIGH'
                     ? 'bg-rose-950 text-rose-400 border-rose-800'
                     : p.risk_label === 'MEDIUM'
                     ? 'bg-amber-950 text-amber-400 border-amber-800'
@@ -92,30 +83,7 @@ export const MLRiskView: React.FC<MLRiskViewProps> = ({ currentScan }) => {
                         {p.risk_label}
                       </span>
                     </td>
-                    <td className="p-3">
-                      <div className="flex items-center space-x-2 w-48">
-                        <div className="flex-1 h-2 rounded-full bg-slate-800 overflow-hidden flex">
-                          <div
-                            style={{ width: `${p.probabilities.LOW * 100}%` }}
-                            className="bg-emerald-500 h-full"
-                            title={`LOW: ${(p.probabilities.LOW * 100).toFixed(0)}%`}
-                          />
-                          <div
-                            style={{ width: `${p.probabilities.MEDIUM * 100}%` }}
-                            className="bg-amber-500 h-full"
-                            title={`MED: ${(p.probabilities.MEDIUM * 100).toFixed(0)}%`}
-                          />
-                          <div
-                            style={{ width: `${p.probabilities.HIGH * 100}%` }}
-                            className="bg-rose-500 h-full"
-                            title={`HIGH: ${(p.probabilities.HIGH * 100).toFixed(0)}%`}
-                          />
-                        </div>
-                        <span className="text-[10px] text-slate-400 w-16 text-right">
-                          {(p.probabilities[p.risk_label] * 100).toFixed(0)}%
-                        </span>
-                      </div>
-                    </td>
+                    <td className="p-3">{p.risk_score}/100</td>
                     <td className="p-3">
                       <div className="flex flex-wrap gap-1">
                         {p.top_features.map((feat, idx) => (
@@ -136,57 +104,52 @@ export const MLRiskView: React.FC<MLRiskViewProps> = ({ currentScan }) => {
         </div>
       </div>
 
-      {/* Global Feature Importances & Model Metrics */}
+      {/* Risk factors and calculation details */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-300">
-              Global Feature Importances (MDI)
+              Current Risk Reasons
             </span>
             <BarChart2 className="w-4 h-4 text-cyan-400" />
           </div>
 
-          <div className="space-y-3">
-            {featureImportances.map((item) => (
-              <div key={item.feature}>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-slate-300">{item.feature}</span>
-                  <span className="font-mono text-slate-400">{(item.importance * 100).toFixed(0)}%</span>
-                </div>
-                <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                  <div className={`h-full ${item.color} rounded-full`} style={{ width: `${item.importance * 100}%` }} />
-                </div>
-              </div>
+          <div className="space-y-2 text-xs text-slate-300">
+            {(currentScan.risk_reasons || []).map((reason) => (
+              <p key={reason} className="rounded-lg bg-slate-950/60 border border-slate-800 p-3">{reason}</p>
             ))}
+            {(!currentScan.risk_reasons || currentScan.risk_reasons.length === 0) && (
+              <p className="text-slate-400">No elevated risk factors were reported.</p>
+            )}
           </div>
         </div>
 
         <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-3">
           <span className="text-xs font-semibold uppercase tracking-wider text-slate-300">
-            Model Validation & Hyperparameters
+            Baseline Score Components
           </span>
 
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800">
-              <span className="text-slate-500 block text-[10px] uppercase">Estimator</span>
-              <span className="font-mono font-semibold text-slate-200">RandomForest</span>
+              <span className="text-slate-500 block text-[10px] uppercase">Model</span>
+              <span className="font-mono font-semibold text-slate-200">No trained model</span>
             </div>
             <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800">
-              <span className="text-slate-500 block text-[10px] uppercase">Test Accuracy</span>
-              <span className="font-mono font-semibold text-emerald-400">88.4%</span>
+              <span className="text-slate-500 block text-[10px] uppercase">Security findings</span>
+              <span className="font-mono font-semibold text-rose-400">Severity weighted</span>
             </div>
             <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800">
-              <span className="text-slate-500 block text-[10px] uppercase">Macro F1 Score</span>
-              <span className="font-mono font-semibold text-cyan-400">0.86</span>
+              <span className="text-slate-500 block text-[10px] uppercase">Bug findings</span>
+              <span className="font-mono font-semibold text-amber-400">Severity weighted</span>
             </div>
             <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800">
-              <span className="text-slate-500 block text-[10px] uppercase">Class Weighting</span>
-              <span className="font-mono font-semibold text-purple-400">Balanced</span>
+              <span className="text-slate-500 block text-[10px] uppercase">Complexity</span>
+              <span className="font-mono font-semibold text-cyan-400">Cyclomatic + loops</span>
             </div>
           </div>
 
           <p className="text-[11px] text-slate-400 pt-2 border-t border-slate-800">
-            Features are scaled with StandardScaler; trees trained with 100 estimators and max depth 8 to prevent overfitting.
+            Scores are capped at 100 and use fixed weights in the backend baseline. They are not probabilities, validated predictions, or a substitute for human review.
           </p>
         </div>
       </div>

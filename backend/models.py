@@ -13,10 +13,10 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Literal, Optional
 
 
-SeverityLevel = Literal["LOW", "MEDIUM", "HIGH"]
+SeverityLevel = Literal["INFORMATIONAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"]
 ConfidenceLevel = Literal["LOW", "MEDIUM", "HIGH", "N/A"]
 FindingSource = Literal["bug", "security", "quality"]
-RiskLabel = Literal["LOW", "MEDIUM", "HIGH"]
+RiskLabel = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
 
 
 @dataclass
@@ -123,11 +123,11 @@ class LanguageStat:
 
 @dataclass
 class FilePrediction:
-    """ML Risk classification output for a single Python file."""
+    """Transparent rule-based risk estimate for a single Python file."""
 
     path: str
     risk_label: RiskLabel
-    probabilities: Dict[str, float]  # E.g. {"LOW": 0.85, "MEDIUM": 0.10, "HIGH": 0.05}
+    risk_score: int
     top_features: List[str]  # Prominent contributing features relative to baseline
 
     def to_dict(self) -> Dict[str, Any]:
@@ -138,7 +138,7 @@ class FilePrediction:
         return cls(
             path=str(data["path"]),
             risk_label=data["risk_label"],
-            probabilities={k: float(v) for k, v in data["probabilities"].items()},
+            risk_score=int(data["risk_score"]),
             top_features=list(data.get("top_features", [])),
         )
 
@@ -210,6 +210,16 @@ class ScanResult:
     warnings: List[str] = field(default_factory=list)
     languages_detected: Dict[str, LanguageStat] = field(default_factory=dict)
     logs: List[str] = field(default_factory=list)
+    risk_label: Optional[RiskLabel] = None
+    risk_reasons: List[str] = field(default_factory=list)
+    risk_model: Optional[str] = None
+    ai_review: Dict[str, Any] = field(default_factory=dict)
+    file_count: Optional[int] = None
+    python_file_count: Optional[int] = None
+    severity_counts: Dict[str, int] = field(default_factory=dict)
+    total_findings: Optional[int] = None
+    findings_truncated: bool = False
+    source_counts: Dict[str, int] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -234,6 +244,16 @@ class ScanResult:
             "duration_seconds": round(self.duration_seconds, 2),
             "warnings": self.warnings,
             "logs": self.logs,
+            "risk_label": self.risk_label,
+            "risk_reasons": self.risk_reasons,
+            "risk_model": self.risk_model,
+            "ai_review": self.ai_review,
+            "file_count": self.file_count,
+            "python_file_count": self.python_file_count,
+            "severity_counts": self.severity_counts,
+            "total_findings": self.total_findings,
+            "findings_truncated": self.findings_truncated,
+            "source_counts": self.source_counts,
         }
 
     def to_json(self, indent: Optional[int] = 2) -> str:
@@ -264,6 +284,34 @@ class ScanResult:
             duration_seconds=float(data.get("duration_seconds", 0.0)),
             warnings=list(data.get("warnings", [])),
             logs=list(data.get("logs", [])),
+            risk_label=data.get("risk_label"),
+            risk_reasons=list(data.get("risk_reasons", [])),
+            risk_model=data.get("risk_model"),
+            ai_review=dict(data.get("ai_review", {})),
+            file_count=(
+                int(data["file_count"]) if data.get("file_count") is not None else None
+            ),
+            python_file_count=(
+                int(data["python_file_count"])
+                if data.get("python_file_count") is not None
+                else None
+            ),
+            severity_counts={
+                key: int(value)
+                for key, value in data.get("severity_counts", {}).items()
+            },
+            total_findings=(
+                int(data["total_findings"])
+                if data.get("total_findings") is not None
+                else None
+            ),
+            findings_truncated=_parse_bool(
+                data.get("findings_truncated", False), "findings_truncated"
+            ),
+            source_counts={
+                key: int(value)
+                for key, value in data.get("source_counts", {}).items()
+            },
         )
 
     @classmethod

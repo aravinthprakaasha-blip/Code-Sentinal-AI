@@ -1,7 +1,7 @@
 /**
  * @file src/components/CodeSandboxView.tsx
  * Interactive Self-Text / Code Editor & Automated Error-Correction Studio.
- * Allows users to paste/write custom code text, load vulnerable polyglot examples,
+ * Allows users to paste/write Python source, load example snippets,
  * detect bugs and vulnerabilities, and automatically apply error corrections with side-by-side diffs.
  */
 
@@ -26,7 +26,8 @@ import {
   Layers,
 } from 'lucide-react';
 import { Finding, ScanResult } from '../types';
-import { analyzeRepository, FileData } from '../services/analyzerService';
+import { FileData } from '../services/analyzerService';
+import { analyzeFilesOnBackend } from '../services/apiService';
 import {
   CODE_EXAMPLES,
   CodeExample,
@@ -53,7 +54,7 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
   const [lastCorrection, setLastCorrection] = useState<AutoCorrectionResult | null>(null);
   const [viewMode, setViewMode] = useState<'editor' | 'diff' | 'explanation'>('editor');
   const [copied, setCopied] = useState<boolean>(false);
-  const [successBanner, setSuccessBanner] = useState<string | null>(null);
+  const [banner, setBanner] = useState<{ message: string; isError: boolean } | null>(null);
 
   // Initialize with first example
   useEffect(() => {
@@ -69,7 +70,7 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
     setRiskScore(null);
     setLastCorrection(null);
     setViewMode('editor');
-    setSuccessBanner(null);
+    setBanner(null);
 
     // Auto-analyze example on load for immediate feedback
     analyzeSnippet(example.code, example.fileName, example.language);
@@ -83,17 +84,23 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
     setLastCorrection(null);
     setSelectedExampleId('custom');
     setFileName('custom_script.py');
-    setSuccessBanner(null);
+    setBanner(null);
   };
 
-  const analyzeSnippet = (codeToTest: string, path: string, langHint?: string) => {
+  const analyzeSnippet = async (codeToTest: string, path: string, langHint?: string) => {
     if (!codeToTest.trim()) return;
+    if (!path.toLowerCase().endsWith('.py') && !path.toLowerCase().endsWith('.pyi')) {
+      setBanner({ message: 'The backend currently analyzes Python files only. Select a .py or .pyi file.', isError: true });
+      setFindings([]);
+      setRiskScore(null);
+      return;
+    }
     setIsAnalyzing(true);
-    setSuccessBanner(null);
+    setBanner(null);
 
     try {
       const files: FileData[] = [{ path, content: codeToTest, language: langHint }];
-      const scan = analyzeRepository('local://self-text', 'self-code-snippet', 'main', files);
+      const scan = await analyzeFilesOnBackend('self-code-snippet', files);
 
       setFindings(scan.findings);
       setRiskScore(scan.risk_score);
@@ -102,7 +109,9 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
         onScanComplete(scan);
       }
     } catch (err) {
-      console.error('Analysis failed:', err);
+      const message = err instanceof Error ? err.message : 'Analysis failed.';
+      console.error(message);
+      setBanner({ message: `Analysis failed: ${message}`, isError: true });
     } finally {
       setIsAnalyzing(false);
     }
@@ -112,8 +121,12 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
     analyzeSnippet(codeText, fileName);
   };
 
-  const handleAutoCorrectAll = () => {
+  const handleAutoCorrectAll = async () => {
     if (findings.length === 0) return;
+    if (!fileName.toLowerCase().endsWith('.py') && !fileName.toLowerCase().endsWith('.pyi')) {
+      setBanner({ message: 'The backend currently analyzes Python files only. Select a .py or .pyi file.', isError: true });
+      return;
+    }
 
     // Detect language from extension
     const ext = fileName.split('.').pop() || 'py';
@@ -124,20 +137,34 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
     setCodeText(result.correctedCode);
 
     // Immediately re-analyze corrected code to show 0 bugs!
-    const reanalyzed = analyzeRepository(
-      'local://self-text',
-      'self-code-snippet',
-      'main',
-      [{ path: fileName, content: result.correctedCode }]
-    );
-
-    setFindings(reanalyzed.findings);
-    setRiskScore(reanalyzed.risk_score);
-    setSuccessBanner(`Successfully auto-corrected ${result.remediatedCount} issue(s)! Current Risk Score: ${reanalyzed.risk_score}/100.`);
-    setViewMode('diff');
+    setIsAnalyzing(true);
+    try {
+      const reanalyzed = await analyzeFilesOnBackend(
+        'self-code-snippet',
+        [{ path: fileName, content: result.correctedCode }]
+      );
+      setFindings(reanalyzed.findings);
+      setRiskScore(reanalyzed.risk_score);
+      setBanner({
+        message: `Applied ${result.remediatedCount} correction template(s) and re-analyzed the code. Current rule-based risk score: ${reanalyzed.risk_score}/100.`,
+        isError: false,
+      });
+      setViewMode('diff');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Re-analysis failed.';
+      setFindings([]);
+      setRiskScore(null);
+      setBanner({ message: `Correction was applied, but re-analysis failed: ${message}`, isError: true });
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
-  const handleFixSingleFinding = (finding: Finding) => {
+  const handleFixSingleFinding = async (finding: Finding) => {
+    if (!fileName.toLowerCase().endsWith('.py') && !fileName.toLowerCase().endsWith('.pyi')) {
+      setBanner({ message: 'The backend currently analyzes Python files only. Select a .py or .pyi file.', isError: true });
+      return;
+    }
     const ext = fileName.split('.').pop() || 'py';
     const lang = ext === 'js' ? 'JavaScript' : ext === 'go' ? 'Go' : ext === 'rs' ? 'Rust' : ext === 'c' ? 'C' : 'Python';
 
@@ -147,16 +174,26 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
       setCodeText(result.correctedCode);
 
       // Re-scan
-      const reanalyzed = analyzeRepository(
-        'local://self-text',
-        'self-code-snippet',
-        'main',
-        [{ path: fileName, content: result.correctedCode }]
-      );
-
-      setFindings(reanalyzed.findings);
-      setRiskScore(reanalyzed.risk_score);
-      setSuccessBanner(`Remediated ${finding.title} (${finding.rule_id}).`);
+      setIsAnalyzing(true);
+      try {
+        const reanalyzed = await analyzeFilesOnBackend(
+          'self-code-snippet',
+          [{ path: fileName, content: result.correctedCode }]
+        );
+        setFindings(reanalyzed.findings);
+        setRiskScore(reanalyzed.risk_score);
+        setBanner({
+          message: `Applied a correction template for ${finding.title} and re-analyzed the code.`,
+          isError: false,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Re-analysis failed.';
+        setFindings([]);
+        setRiskScore(null);
+        setBanner({ message: `Correction was applied, but re-analysis failed: ${message}`, isError: true });
+      } finally {
+        setIsAnalyzing(false);
+      }
     }
   };
 
@@ -165,7 +202,6 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
       setCodeText(originalBackup);
       analyzeSnippet(originalBackup, fileName);
       setLastCorrection(null);
-      setSuccessBanner('Restored original code text.');
       setViewMode('editor');
     }
   };
@@ -195,7 +231,7 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
                 </span>
               </h1>
               <p className="text-xs text-slate-400 mt-0.5">
-                Type or paste your own source text, load buggy polyglot examples, detect bugs & security flaws, and apply automated error corrections.
+                Analyze Python snippets on the secure backend, review findings, and apply clearly identified correction templates.
               </p>
             </div>
           </div>
@@ -276,15 +312,15 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
       </div>
 
       {/* Success / Remediated Banner */}
-      {successBanner && (
-        <div className="p-3.5 rounded-xl bg-emerald-950/60 border border-emerald-800/80 text-emerald-200 text-xs flex items-center justify-between shadow-lg">
+      {banner && (
+        <div className={`p-3.5 rounded-xl ${banner.isError ? 'bg-rose-950/60 border-rose-800/80 text-rose-200' : 'bg-emerald-950/60 border-emerald-800/80 text-emerald-200'} border text-xs flex items-center justify-between shadow-lg`}>
           <div className="flex items-center space-x-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>{successBanner}</span>
+            {banner.isError ? <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" /> : <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
+            <span>{banner.message}</span>
           </div>
           <button
-            onClick={() => setSuccessBanner(null)}
-            className="text-xs text-emerald-400 hover:text-emerald-300 ml-4 underline"
+            onClick={() => setBanner(null)}
+            className="text-xs hover:opacity-80 ml-4 underline"
           >
             Dismiss
           </button>
@@ -302,7 +338,11 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
                 <input
                   type="text"
                   value={fileName}
-                  onChange={(e) => setFileName(e.target.value)}
+                  onChange={(e) => {
+                    setFileName(e.target.value);
+                    setFindings([]);
+                    setRiskScore(null);
+                  }}
                   className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-200 font-mono focus:outline-none focus:border-cyan-500"
                   placeholder="script.py"
                 />
@@ -357,7 +397,11 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
                 {/* Textarea */}
                 <textarea
                   value={codeText}
-                  onChange={(e) => setCodeText(e.target.value)}
+                  onChange={(e) => {
+                    setCodeText(e.target.value);
+                    setFindings([]);
+                    setRiskScore(null);
+                  }}
                   placeholder="Paste or type any source code snippet here..."
                   className="w-full h-full p-3 bg-transparent text-slate-200 focus:outline-none resize-none leading-relaxed font-mono selection:bg-cyan-500/30 selection:text-cyan-200"
                   rows={20}
@@ -404,7 +448,7 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
                   </div>
                 ) : (
                   <div className="p-8 text-center text-slate-500">
-                    No active diff. Click "⚡ Auto-Correct All Bugs" to generate and view the before/after comparison.
+                    No active diff. Apply a correction template to see its before/after comparison.
                   </div>
                 )}
               </div>
@@ -431,11 +475,11 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
                 <button
                   type="button"
                   onClick={handleAutoCorrectAll}
-                  disabled={findings.length === 0}
+                  disabled={findings.length === 0 || isAnalyzing}
                   className="px-5 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 text-white text-xs font-bold shadow-lg shadow-cyan-600/25 transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-40"
                 >
                   <Wand2 className="w-4 h-4 text-cyan-200" />
-                  <span>⚡ Auto-Correct All Bugs</span>
+                  <span>Apply Correction Templates</span>
                 </button>
               </div>
             </div>
@@ -453,14 +497,14 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
               {riskScore !== null && (
                 <span
                   className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
-                    riskScore >= 70
+                    riskScore >= 80
                       ? 'bg-rose-950 text-rose-300 border-rose-800'
-                      : riskScore >= 35
+                      : riskScore >= 60
                       ? 'bg-amber-950 text-amber-300 border-amber-800'
                       : 'bg-emerald-950 text-emerald-300 border-emerald-800'
                   }`}
                 >
-                  Risk Score: {riskScore}/100 ({riskScore >= 70 ? 'HIGH RISK' : riskScore >= 35 ? 'MEDIUM' : 'SAFE'})
+                  Risk Score: {riskScore}/100 ({riskScore >= 80 ? 'CRITICAL' : riskScore >= 60 ? 'HIGH' : riskScore >= 30 ? 'MEDIUM' : 'LOW'})
                 </span>
               )}
             </div>
@@ -502,10 +546,10 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
             {findings.length === 0 ? (
               <div className="p-8 text-center text-slate-500 space-y-2">
                 <ShieldCheck className="w-10 h-10 mx-auto text-emerald-500/60" />
-                <div className="text-xs font-semibold text-slate-300">No Bugs or Vulnerabilities Found</div>
+                <div className="text-xs font-semibold text-slate-300">No Findings Reported</div>
                 <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
                   {riskScore === 0
-                    ? 'Code has been verified clean! All detected issues were remediated.'
+                    ? 'No issues were reported by the configured scanners.'
                     : 'Click "Find Bugs & Vulnerabilities" or load one of the examples above.'}
                 </p>
               </div>

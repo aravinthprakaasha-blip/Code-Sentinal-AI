@@ -1,6 +1,6 @@
 /**
  * @file src/components/QualityView.tsx
- * Code Quality & Pylint metrics view showing cyclomatic complexity and per-file indicators.
+ * Python code quality metrics view showing cyclomatic complexity and per-file indicators.
  */
 
 import React from 'react';
@@ -37,7 +37,7 @@ export const QualityView: React.FC<QualityViewProps> = ({ currentScan }) => {
           <span>Code Quality & Maintainability</span>
         </h1>
         <p className="text-xs text-slate-400 mt-1">
-          Bundled Pylint rules and AST cyclomatic complexity metrics normalized by thousands of lines of code (KLOC).
+          Python AST complexity, function length, and finding-density indicators from the backend analysis.
         </p>
       </div>
 

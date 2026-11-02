@@ -1,7 +1,6 @@
 /**
  * @file src/components/ScannerView.tsx
- * Universal repository scanner interface supporting all Git URLs, deep tree links,
- * preset open-source repositories, and direct Python code/file ingestion.
+ * GitHub repository scanner with direct Python source and file ingestion.
  */
 
 import React, { useState } from 'react';
@@ -21,13 +20,11 @@ import {
   Globe,
 } from 'lucide-react';
 import {
-  fetchUniversalRepositoryFiles,
   parseUniversalRepoUrl,
   POPULAR_PRESET_REPOS,
-  SAMPLE_VULNERABLE_REPO,
-  isCodeFile,
 } from '../services/repoService';
-import { analyzeRepository, FileData } from '../services/analyzerService';
+import { FileData } from '../services/analyzerService';
+import { analyzeFilesOnBackend, analyzeRepositoryOnBackend } from '../services/apiService';
 import { CODE_EXAMPLES } from '../services/remediationService';
 import { ScanResult } from '../types';
 
@@ -60,13 +57,10 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const [activeStepIndex, setActiveStepIndex] = useState(0);
 
   const steps: ScanStep[] = [
-    { id: 1, label: 'Resolve Repository Target & Enforce Path Traversal Hygiene', status: activeStepIndex > 0 ? 'completed' : activeStepIndex === 0 && isScanning ? 'active' : 'pending' },
-    { id: 2, label: 'Ingest Repository & Extract Polyglot Source (Python, Go, Rust, JS/TS, Java, C/C++)', status: activeStepIndex > 1 ? 'completed' : activeStepIndex === 1 && isScanning ? 'active' : 'pending' },
-    { id: 3, label: 'Run AST & Static Bug Detectors Across Polyglot Engines', status: activeStepIndex > 2 ? 'completed' : activeStepIndex === 2 && isScanning ? 'active' : 'pending' },
-    { id: 4, label: 'Run Security Scanners & Map MITRE CWEs (Bandit, GoSec, RustSec, ESLint-Sec)', status: activeStepIndex > 3 ? 'completed' : activeStepIndex === 3 && isScanning ? 'active' : 'pending' },
-    { id: 5, label: 'Run Code Quality & Cyclomatic Complexity Analysis', status: activeStepIndex > 4 ? 'completed' : activeStepIndex === 4 && isScanning ? 'active' : 'pending' },
-    { id: 6, label: 'Evaluate ML Risk Engine & Enforce Cybersecurity Threat Floors', status: activeStepIndex > 5 ? 'completed' : activeStepIndex === 5 && isScanning ? 'active' : 'pending' },
-    { id: 7, label: 'Compute Composite Risk Index & Sync to Cloud Firestore', status: activeStepIndex > 6 ? 'completed' : activeStepIndex === 6 && isScanning ? 'active' : 'pending' },
+    { id: 1, label: 'Validate repository or source file paths', status: activeStepIndex > 0 ? 'completed' : activeStepIndex === 0 && isScanning ? 'active' : 'pending' },
+    { id: 2, label: 'Retrieve Python source without executing repository code', status: activeStepIndex > 1 ? 'completed' : activeStepIndex === 1 && isScanning ? 'active' : 'pending' },
+    { id: 3, label: 'Run Python AST checks, Pyflakes, and Bandit', status: activeStepIndex > 2 ? 'completed' : activeStepIndex === 2 && isScanning ? 'active' : 'pending' },
+    { id: 4, label: 'Calculate explainable risk and save private analysis history', status: activeStepIndex > 3 ? 'completed' : activeStepIndex === 3 && isScanning ? 'active' : 'pending' },
   ];
 
   const appendLog = (msg: string) => {
@@ -74,62 +68,31 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   };
 
   const executePipeline = async (
-    url: string,
-    br: string,
-    filesData: FileData[],
-    repoName: string
+    repoName: string,
+    analyze: () => Promise<ScanResult>
   ) => {
     setIsScanning(true);
     setLogs([]);
 
     try {
-      // Step 1
       setActiveStepIndex(0);
-      appendLog(`Target confirmed: ${repoName} (${url})`);
-      await new Promise(r => setTimeout(r, 200));
-
-      // Step 2
+      appendLog(`Submitting ${repoName} to the authenticated CodeSentry backend.`);
       setActiveStepIndex(1);
-      appendLog(`Ingested ${filesData.length} source file(s) across polyglot languages into isolated memory sandbox.`);
-      await new Promise(r => setTimeout(r, 200));
-
-      // Step 3
       setActiveStepIndex(2);
-      appendLog(`Running bug detector across ${filesData.length} files (AST zero-div, loop bounds, error unwraps)...`);
-      await new Promise(r => setTimeout(r, 200));
-
-      // Step 4
+      appendLog('Backend is running Python parsing, static checks, security scanning, and risk calculation.');
+      const scanResult = await analyze();
       setActiveStepIndex(3);
-      appendLog('Security engines checking SQL injection, shell exec, unsafe blocks, memory transmutations, and secrets...');
-      await new Promise(r => setTimeout(r, 200));
-
-      // Step 5
-      setActiveStepIndex(4);
-      appendLog('Computing code quality metrics, nesting depth, and cyclomatic complexity...');
-      await new Promise(r => setTimeout(r, 200));
-
-      // Step 6
-      setActiveStepIndex(5);
-      appendLog('Evaluating ML Risk Classifier & Cybersecurity Floor Guards across polyglot files...');
-      await new Promise(r => setTimeout(r, 200));
-
-      // Step 7
-      setActiveStepIndex(6);
-      appendLog('Synthesizing composite repository risk index (0-100)...');
-      const scanResult = analyzeRepository(url, repoName, br || 'main', filesData);
-
-      // Append backend execution logs directly into UI terminal for complete visibility
       if (scanResult.logs && scanResult.logs.length > 0) {
         setLogs(prev => [...prev, ...scanResult.logs!]);
       }
-
-      await new Promise(r => setTimeout(r, 200));
-
+      if (scanResult.ai_review?.status !== 'available') {
+        appendLog(scanResult.ai_review?.reason || 'Gemini recommendations are not configured.');
+      }
       appendLog(`Scan complete! Risk Index: ${scanResult.risk_score}/100. Issues detected: ${scanResult.findings.length}.`);
-      setActiveStepIndex(7);
       onScanComplete(scanResult);
     } catch (err: any) {
       appendLog(`ERROR: ${err?.message || 'Scan failed'}`);
+      setUrlError(err?.message || 'Analysis failed.');
     } finally {
       setIsScanning(false);
     }
@@ -173,8 +136,15 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         ? customFileName
         : `app${finalExt}`;
 
+      if (!finalName.toLowerCase().endsWith('.py') && !finalName.toLowerCase().endsWith('.pyi')) {
+        setUrlError('The backend currently analyzes Python files only. Choose a .py or .pyi source file.');
+        return;
+      }
       const files: FileData[] = [{ path: finalName, content: customCode, language: detectedLang }];
-      await executePipeline('local://pasted-snippet', 'main', files, `local-snippet/${finalName}`);
+      await executePipeline(
+        `local-snippet/${finalName}`,
+        () => analyzeFilesOnBackend(`local-snippet/${finalName}`, files)
+      );
       return;
     }
 
@@ -183,19 +153,21 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       setUrlError(validation.error || 'Invalid repository identifier.');
       return;
     }
+    const repositoryInfo = validation.info;
+    if (!repositoryInfo || repositoryInfo.provider !== 'github') {
+      setUrlError('The secure backend currently supports public GitHub repositories only.');
+      return;
+    }
 
     try {
-      setIsScanning(true);
-      setLogs([`Connecting to ${validation.info?.normalizedUrl}...`]);
-
-      const result = await fetchUniversalRepositoryFiles(
-        repoUrl,
-        branch || undefined,
-        250,
-        (statusMsg) => appendLog(statusMsg)
+      setLogs([`Connecting to ${repositoryInfo.normalizedUrl}...`]);
+      await executePipeline(
+        `${repositoryInfo.owner}/${repositoryInfo.repo}`,
+        () => analyzeRepositoryOnBackend(
+          repositoryInfo.normalizedUrl,
+          branch || repositoryInfo.branch
+        )
       );
-
-      await executePipeline(result.repoUrl, result.actualBranch, result.files, result.repoName);
     } catch (err: any) {
       setIsScanning(false);
       setUrlError(err?.message || 'Failed to fetch repository files.');
@@ -214,29 +186,48 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     const uploadedFiles = e.target.files;
     if (!uploadedFiles || uploadedFiles.length === 0) return;
 
-    // Accept all recognized programming code files
-    const fileList = Array.from(uploadedFiles).filter(f => isCodeFile(f.name));
+    const fileList = Array.from(uploadedFiles).filter(file =>
+      /\.(py|pyi)$/i.test(file.name)
+    );
     if (fileList.length === 0) {
-      setUrlError('Please upload code files (e.g. .py, .js, .ts, .java, .c, .go, .php, .sql, etc.).');
+      setUrlError('The backend currently analyzes Python files only. Upload .py or .pyi files.');
+      return;
+    }
+    if (fileList.length > 500) {
+      setUrlError('Upload no more than 500 Python files in one analysis.');
+      return;
+    }
+    const oversizedFile = fileList.find(file => file.size > 500_000);
+    if (oversizedFile) {
+      setUrlError(`${oversizedFile.name} exceeds the 500 KB per-file limit.`);
+      return;
+    }
+    if (fileList.reduce((total, file) => total + file.size, 0) > 20_000_000) {
+      setUrlError('The selected Python files exceed the 20 MB total upload limit.');
       return;
     }
 
     const readers: Promise<FileData>[] = fileList.map(f => {
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (event) => {
-          resolve({
-            path: f.name,
-            content: (event.target?.result as string) || '',
-          });
+          if (typeof event.target?.result !== 'string') {
+            reject(new Error(`Could not read ${f.name} as text.`));
+            return;
+          }
+          resolve({ path: f.webkitRelativePath || f.name, content: event.target.result });
         };
+        reader.onerror = () => reject(new Error(`Could not read ${f.name}.`));
         reader.readAsText(f);
       });
     });
 
-    Promise.all(readers).then(files => {
-      executePipeline('local://uploaded-files', 'local', files, `local-upload/${files[0].path}`);
-    });
+    Promise.all(readers)
+      .then(files => executePipeline(
+        `local-upload/${files.length} file(s)`,
+        () => analyzeFilesOnBackend(`local-upload/${files[0].path}`, files)
+      ))
+      .catch(error => setUrlError(error.message || 'Could not read uploaded source files.'));
   };
 
   return (
@@ -245,10 +236,10 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       <div>
         <h1 className="text-xl font-bold text-slate-100 flex items-center space-x-2">
           <Search className="w-5 h-5 text-cyan-400" />
-          <span>Universal Repository Scanner</span>
+          <span>Python Repository Scanner</span>
         </h1>
         <p className="text-xs text-slate-400 mt-1">
-          Supports all GitHub, GitLab, and Bitbucket URLs, branch deep-links, slugs (<code className="text-cyan-300">owner/repo</code>), and direct code uploads.
+          Scans public GitHub repositories and Python source uploads with server-side AST, Pyflakes, and Bandit analysis.
         </p>
       </div>
 
@@ -263,7 +254,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           }`}
         >
           <Globe className="w-3.5 h-3.5" />
-          <span>Repository Link / Git Slug</span>
+          <span>GitHub Repository</span>
         </button>
 
         <button
@@ -290,7 +281,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           <input
             type="file"
             multiple
-            accept=".py,.js,.ts,.go,.rs,.java,.c,.cpp,.php"
+            accept=".py,.pyi"
             onChange={handleFileUpload}
             className="hidden"
           />
@@ -304,7 +295,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div className="md:col-span-3 space-y-1.5">
                 <label className="text-xs font-medium text-slate-300">
-                  Repository URL or Slug (e.g. <span className="font-mono text-cyan-400">psf/requests</span>, <span className="font-mono text-cyan-400">pallets/flask</span>, or full HTTPS link)
+                  Public GitHub URL (e.g. <span className="font-mono text-cyan-400">https://github.com/psf/requests</span>)
                 </label>
                 <div className="relative">
                   <input
@@ -365,7 +356,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
               <div className="text-[11px] text-slate-400 flex items-center space-x-1">
                 <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Zero rate limits via global repository mirrors.</span>
+                <span>Repository code is analyzed without executing it.</span>
               </div>
 
               <button
@@ -394,11 +385,11 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               <div className="flex items-center justify-between">
                 <span className="text-[11px] text-slate-400 font-medium flex items-center space-x-1">
                   <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Load Buggy Example Snippet with 1-Click:</span>
+                  <span>Load Python Example Snippet with 1-Click:</span>
                 </span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {CODE_EXAMPLES.map((ex) => (
+                {CODE_EXAMPLES.filter(ex => ex.fileName.toLowerCase().endsWith('.py') || ex.fileName.toLowerCase().endsWith('.pyi')).map((ex) => (
                   <button
                     key={ex.id}
                     type="button"
@@ -503,7 +494,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               <Terminal className="w-3.5 h-3.5 text-cyan-400" />
               <span>Console Stream</span>
             </div>
-            <span>Python AST / Bandit / Pylint / Scikit-Learn</span>
+            <span>Python AST / Pyflakes / Bandit / Rule-Based Risk</span>
           </div>
           <div className="space-y-1 max-h-48 overflow-y-auto text-slate-300">
             {logs.map((log, idx) => (

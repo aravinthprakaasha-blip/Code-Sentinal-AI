@@ -45,10 +45,10 @@ export const SecurityView: React.FC<SecurityViewProps> = ({ currentScan, onSelec
         <div>
           <h1 className="text-xl font-bold text-slate-100 flex items-center space-x-2">
             <ShieldAlert className="w-5 h-5 text-rose-400" />
-            <span>Polyglot Security Vulnerability Audit</span>
+            <span>Python Security Vulnerability Audit</span>
           </h1>
           <p className="text-xs text-slate-400 mt-1">
-            Bandit, Semgrep, and static security rules mapped directly to MITRE Common Weakness Enumeration (CWE) standards across all programming languages.
+            Python security findings reported by the Bandit scanner, with CWE data when the scanner provides it.
           </p>
         </div>
 

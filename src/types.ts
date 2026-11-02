@@ -1,12 +1,12 @@
 /**
  * @file src/types.ts
- * Shared data contracts and models for CodeSentry AI polyglot code review.
+ * Shared data contracts and models for CodeSentry AI Python code analysis.
  */
 
-export type SeverityLevel = 'LOW' | 'MEDIUM' | 'HIGH';
+export type SeverityLevel = 'INFORMATIONAL' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 export type ConfidenceLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'N/A';
 export type FindingSource = 'bug' | 'security' | 'quality';
-export type RiskLabel = 'LOW' | 'MEDIUM' | 'HIGH';
+export type RiskLabel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
 export interface Finding {
   id: string;
@@ -42,12 +42,8 @@ export interface FileMetrics {
 
 export interface FilePrediction {
   path: string;
+  risk_score: number;
   risk_label: RiskLabel;
-  probabilities: {
-    LOW: number;
-    MEDIUM: number;
-    HIGH: number;
-  };
   top_features: string[];
 }
 
@@ -85,12 +81,35 @@ export interface ScanResult {
   predictions: FilePrediction[];
   quality_score: number;
   risk_score: number;
+  risk_label?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  risk_reasons?: string[];
+  risk_model?: string;
+  ai_review?: {
+    status: 'available' | 'unavailable' | 'not_requested';
+    reason?: string | null;
+    recommendations?: Array<{
+      rule_id: string;
+      explanation: string;
+      suggested_code: string;
+      best_practice: string;
+    }>;
+    repository_review?: string | null;
+  };
+  file_count?: number;
+  python_file_count?: number;
+  repository_file_count?: number;
+  total_files_scanned?: number;
+  repository_counts?: Record<string, number>;
+  languages_detected_names?: string[];
+  severity_counts?: Record<string, number>;
+  total_findings?: number;
+  findings_truncated?: boolean;
+  source_counts?: Record<string, number>;
   risk_breakdown: {
     security: number;
     bugs: number;
     complexity: number;
     quality: number;
-    ml_risk: number;
   };
   duration_seconds: number;
   warnings: string[];

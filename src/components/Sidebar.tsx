@@ -55,7 +55,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, curren
     { id: 'bugs' as NavTab, label: 'Bug Detection', icon: Bug, badge: bugCount, badgeColor: 'bg-amber-950 text-amber-400 border-amber-800' },
     { id: 'security' as NavTab, label: 'Security Analysis', icon: ShieldAlert, badge: secCount, badgeColor: 'bg-rose-950 text-rose-400 border-rose-800' },
     { id: 'quality' as NavTab, label: 'Code Quality', icon: Sparkles, badge: currentScan ? `${currentScan.quality_score}` : undefined, badgeColor: 'bg-emerald-950 text-emerald-400 border-emerald-800' },
-    { id: 'ml_risk' as NavTab, label: 'ML Risk Prediction', icon: Cpu },
+    { id: 'ml_risk' as NavTab, label: 'Rule-Based Risk', icon: Cpu },
     { id: 'reviewer' as NavTab, label: 'AI Code Reviewer', icon: GitCompare },
     { id: 'assistant' as NavTab, label: 'Review Assistant', icon: MessageSquareCode },
     { id: 'reports' as NavTab, label: 'Reports', icon: FileText },

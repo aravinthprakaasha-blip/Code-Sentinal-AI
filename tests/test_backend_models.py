@@ -53,6 +53,9 @@ class ScanResultModelTests(unittest.TestCase):
             "predictions": [],
             "quality_score": 90,
             "risk_score": 70,
+            "risk_label": "HIGH",
+            "risk_reasons": ["1 high severity finding(s)"],
+            "risk_model": "transparent-rule-based",
             "risk_breakdown": {},
             "duration_seconds": 1,
             "warnings": [],
@@ -66,6 +69,8 @@ class ScanResultModelTests(unittest.TestCase):
         self.assertEqual(result.findings[0].language, "Python")
         self.assertEqual(result.findings[0].snippet, "unsafe_call()")
         self.assertEqual(result.file_metrics[0].language, "Python")
+        self.assertEqual(result.risk_label, "HIGH")
+        self.assertEqual(result.to_dict()["risk_reasons"], ["1 high severity finding(s)"])
 
     def test_finding_rejects_string_boolean(self) -> None:
         data = {

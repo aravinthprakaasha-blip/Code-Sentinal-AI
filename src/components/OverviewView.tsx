@@ -26,7 +26,6 @@ interface OverviewViewProps {
   onSelectSavedScan: (scan: any) => void;
   onDeleteScan: (scanId: string) => void;
   onNavigateScanner: () => void;
-  onScanSample: () => void;
   onNavigateSandbox?: () => void;
 }
 
@@ -36,7 +35,6 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   onSelectSavedScan,
   onDeleteScan,
   onNavigateScanner,
-  onScanSample,
   onNavigateSandbox,
 }) => {
   if (!currentScan) {
@@ -49,7 +47,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </div>
           <h2 className="text-xl font-bold text-slate-100 tracking-tight">No Active Repository Scanned</h2>
           <p className="text-sm text-slate-400 mt-2 max-w-md mx-auto leading-relaxed">
-            Welcome to CodeSentry AI. Run real static AST bug analysis, security auditing, and automated error-correction across polyglot repositories and custom code text.
+          Welcome to CodeSentry AI. Run server-side Python AST, Pyflakes, and Bandit analysis on a public GitHub repository or uploaded Python source.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3 mt-6">
             <button
@@ -68,12 +66,6 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 <span>Self Text & Auto-Corrector</span>
               </button>
             )}
-            <button
-              onClick={onScanSample}
-              className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-all cursor-pointer"
-            >
-              Try Sample Vulnerable Repository
-            </button>
           </div>
         </div>
 
@@ -91,12 +83,12 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                   className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between hover:border-slate-700 transition-all"
                 >
                   <div className="space-y-1">
-                    <p className="text-xs font-semibold text-slate-200 truncate max-w-[200px]">{s.repoName}</p>
-                    <p className="text-[10px] text-slate-400">{new Date(s.createdAt).toLocaleString()}</p>
+                    <p className="text-xs font-semibold text-slate-200 truncate max-w-[200px]">{s.repo_name}</p>
+                    <p className="text-[10px] text-slate-400">{new Date(s.created_at).toLocaleString()}</p>
                     <div className="flex items-center space-x-2 text-[10px]">
-                      <span className="text-slate-400">{s.filesCount} files</span>
+                      <span className="text-slate-400">{s.file_count} files</span>
                       <span className="text-slate-500">•</span>
-                      <span className="text-rose-400">{s.findingsCount} findings</span>
+                      <span className="text-rose-400">{s.findings_count} findings</span>
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -122,18 +114,24 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
     );
   }
 
-  const bugCount = currentScan.findings.filter(f => f.source === 'bug').length;
-  const secCount = currentScan.findings.filter(f => f.source === 'security').length;
-  const qualCount = currentScan.findings.filter(f => f.source === 'quality').length;
-  const highCount = currentScan.findings.filter(f => f.severity === 'HIGH').length;
-  const medCount = currentScan.findings.filter(f => f.severity === 'MEDIUM').length;
-  const lowCount = currentScan.findings.filter(f => f.severity === 'LOW').length;
+  const bugCount = currentScan.source_counts?.bug ?? currentScan.findings.filter(f => f.source === 'bug').length;
+  const secCount = currentScan.source_counts?.security ?? currentScan.findings.filter(f => f.source === 'security').length;
+  const qualCount = currentScan.source_counts?.quality ?? currentScan.findings.filter(f => f.source === 'quality').length;
+  const highCount = currentScan.severity_counts?.HIGH ?? currentScan.findings.filter(f => f.severity === 'HIGH').length;
+  const medCount = currentScan.severity_counts?.MEDIUM ?? currentScan.findings.filter(f => f.severity === 'MEDIUM').length;
+  const lowCount = currentScan.severity_counts?.LOW ?? currentScan.findings.filter(f => f.severity === 'LOW').length;
+  const criticalCount = currentScan.severity_counts?.CRITICAL ?? 0;
+  const informationalCount = currentScan.severity_counts?.INFORMATIONAL ?? 0;
 
   const hasHighRisk = highCount > 0 || currentScan.risk_score >= 65;
   const hasMedRisk = medCount > 0 || currentScan.risk_score >= 35;
-  const riskLabel = hasHighRisk ? 'HIGH' : hasMedRisk ? 'MEDIUM' : 'LOW';
+  const riskLabel = currentScan.risk_label || (hasHighRisk ? 'HIGH' : hasMedRisk ? 'MEDIUM' : 'LOW');
   const riskColor =
-    riskLabel === 'HIGH' ? 'text-rose-400' : riskLabel === 'MEDIUM' ? 'text-amber-400' : 'text-emerald-400';
+    riskLabel === 'HIGH' || riskLabel === 'CRITICAL'
+      ? 'text-rose-400'
+      : riskLabel === 'MEDIUM'
+        ? 'text-amber-400'
+        : 'text-emerald-400';
 
   return (
     <div className="space-y-6">
@@ -180,8 +178,14 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             <FileCode className="w-4 h-4 text-cyan-400" />
           </div>
           <p className="text-2xl font-bold text-slate-100 font-mono">{currentScan.files.length}</p>
-          <span className="text-[10px] text-slate-400">Polyglot Code Files</span>
+          <span className="text-[10px] text-slate-400">Python Files Analyzed</span>
         </div>
+
+        {currentScan.findings_truncated && (
+          <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-800/70 text-xs text-amber-200">
+            Showing the {currentScan.findings.length} highest-severity findings of {currentScan.total_findings} total. Risk scoring includes all findings.
+          </div>
+        )}
 
         <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-1">
           <div className="flex items-center justify-between text-slate-400">
@@ -189,7 +193,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             <Bug className="w-4 h-4 text-amber-400" />
           </div>
           <p className="text-2xl font-bold text-amber-400 font-mono">{bugCount}</p>
-          <span className="text-[10px] text-slate-400">Multi-language AST checks</span>
+          <span className="text-[10px] text-slate-400">AST and Pyflakes checks</span>
         </div>
 
         <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-1">
@@ -198,7 +202,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             <ShieldAlert className="w-4 h-4 text-rose-400" />
           </div>
           <p className="text-2xl font-bold text-rose-400 font-mono">{secCount}</p>
-          <span className="text-[10px] text-slate-400">CWE Mapped Vulnerabilities</span>
+          <span className="text-[10px] text-slate-400">Bandit scanner findings</span>
         </div>
 
         <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-1">
@@ -230,7 +234,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-300">
               Repository Programming Languages ({Object.keys(currentScan.languages_detected).length} Detected)
             </span>
-            <span className="text-xs text-cyan-400 font-mono">Polyglot Analyzer Active</span>
+            <span className="text-xs text-cyan-400 font-mono">Python files analyzed</span>
           </div>
 
           {/* Polyglot colored bar */}
@@ -284,7 +288,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             <div className="flex items-center justify-between mb-4">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Repository Risk Index</span>
               <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
-                riskLabel === 'HIGH' ? 'bg-rose-950 text-rose-400 border-rose-800' :
+                riskLabel === 'HIGH' || riskLabel === 'CRITICAL' ? 'bg-rose-950 text-rose-400 border-rose-800' :
                 riskLabel === 'MEDIUM' ? 'bg-amber-950 text-amber-400 border-amber-800' :
                 'bg-emerald-950 text-emerald-400 border-emerald-800'
               }`}>
@@ -308,7 +312,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                     cx="50"
                     cy="50"
                     r="40"
-                    stroke={riskLabel === 'HIGH' ? '#f43f5e' : riskLabel === 'MEDIUM' ? '#f59e0b' : '#10b981'}
+                    stroke={riskLabel === 'HIGH' || riskLabel === 'CRITICAL' ? '#f43f5e' : riskLabel === 'MEDIUM' ? '#f59e0b' : '#10b981'}
                     strokeWidth="10"
                     fill="transparent"
                     strokeDasharray={2 * Math.PI * 40}
@@ -328,7 +332,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800/80 text-[11px] text-slate-400 flex items-start space-x-2">
             <Info className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
             <p>
-              Project-specific heuristic score computed from static metrics and ML predictions. Not a certified safety rating.
+              Project-specific rule-based score computed from static findings and metrics. Not a certified safety rating.
             </p>
           </div>
         </div>
@@ -337,13 +341,13 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
         <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 md:col-span-2 space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Risk Factor Composition</span>
-            <span className="text-xs text-slate-400">5 Weighted Components</span>
+            <span className="text-xs text-slate-400">Capped factor scores, not percentages</span>
           </div>
 
           <div className="space-y-3.5">
             <div>
               <div className="flex justify-between text-xs mb-1">
-                <span className="text-slate-300 font-medium">Security Vulnerabilities (40% Weight)</span>
+                <span className="text-slate-300 font-medium">Security findings</span>
                 <span className="font-mono text-rose-400 font-semibold">{currentScan.risk_breakdown?.security || 0}/100</span>
               </div>
               <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
@@ -353,7 +357,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
             <div>
               <div className="flex justify-between text-xs mb-1">
-                <span className="text-slate-300 font-medium">AST Bug Density (20% Weight)</span>
+                <span className="text-slate-300 font-medium">Bug findings</span>
                 <span className="font-mono text-amber-400 font-semibold">{currentScan.risk_breakdown?.bugs || 0}/100</span>
               </div>
               <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
@@ -363,17 +367,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
             <div>
               <div className="flex justify-between text-xs mb-1">
-                <span className="text-slate-300 font-medium">Machine Learning Risk (15% Weight)</span>
-                <span className="font-mono text-purple-400 font-semibold">{currentScan.risk_breakdown?.ml_risk || 0}/100</span>
-              </div>
-              <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
-                <div className="h-full bg-purple-500 rounded-full" style={{ width: `${currentScan.risk_breakdown?.ml_risk || 0}%` }} />
-              </div>
-            </div>
-
-            <div>
-              <div className="flex justify-between text-xs mb-1">
-                <span className="text-slate-300 font-medium">Cyclomatic Complexity (15% Weight)</span>
+                <span className="text-slate-300 font-medium">Cyclomatic complexity and nested loops</span>
                 <span className="font-mono text-blue-400 font-semibold">{currentScan.risk_breakdown?.complexity || 0}/100</span>
               </div>
               <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
@@ -383,7 +377,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
             <div>
               <div className="flex justify-between text-xs mb-1">
-                <span className="text-slate-300 font-medium">Quality Deficits (10% Weight)</span>
+                <span className="text-slate-300 font-medium">Quality deficits</span>
                 <span className="font-mono text-cyan-400 font-semibold">{currentScan.risk_breakdown?.quality || 0}/100</span>
               </div>
               <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
@@ -396,6 +390,11 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs">
             <span className="text-slate-400">Severity Distribution:</span>
             <div className="flex items-center space-x-2">
+              {criticalCount > 0 && (
+                <span className="px-2 py-0.5 rounded bg-red-950 text-red-200 border border-red-800 font-mono font-medium">
+                  {criticalCount} CRITICAL
+                </span>
+              )}
               <span className="px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 font-mono font-medium">
                 {highCount} HIGH
               </span>
@@ -405,6 +404,11 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               <span className="px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800 font-mono font-medium">
                 {lowCount} LOW
               </span>
+              {informationalCount > 0 && (
+                <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono font-medium">
+                  {informationalCount} INFO
+                </span>
+              )}
             </div>
           </div>
         </div>

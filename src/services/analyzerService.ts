@@ -1,9 +1,7 @@
 /**
  * @file src/services/analyzerService.ts
- * Multi-Language Polyglot static analysis engine executing AST/regex bug detection,
- * security vulnerability checks (mapped to MITRE CWEs), code quality metrics,
- * and ML risk classification across Python, TypeScript, JavaScript, Java, C/C++,
- * Go, Rust, PHP, SQL, Shell, and Dockerfile.
+ * Legacy demo/test helpers for language metadata and client-side heuristics.
+ * Production analysis runs through the authenticated Python backend.
  */
 
 import {
@@ -254,9 +252,8 @@ export function analyzeRepository(
 
   // Calculate Composite Risk Score
   const { totalScore: riskScore, breakdown: riskBreakdown } = calculateRiskScore(
-    findings,
-    fileMetricsList,
-    predictions
+  findings,
+  fileMetricsList
   );
 
   const highSec = findings.filter(f => f.source === 'security' && f.severity === 'HIGH').length;
@@ -277,12 +274,12 @@ export function analyzeRepository(
     repo_url: repoUrl,
     repo_name: repoName,
     branch,
-    commit_sha: 'HEAD-' + Math.random().toString(16).substring(2, 10),
+    commit_sha: 'unknown',
     timestamp: new Date().toISOString(),
     settings_used: {
       max_file_size_kb: settings.maxFileSizeKb || 250,
       languages_supported: ['Python', 'TypeScript', 'JavaScript', 'Java', 'C/C++', 'Go', 'Rust', 'PHP', 'SQL', 'Shell', 'Dockerfile'],
-      analyzers: ['AST Bug Detector', 'Bandit/Semgrep Security', 'Pylint/ESLint Quality', 'RandomForest ML'],
+      analyzers: ['Demonstration-only client heuristics; not production scan results'],
     },
     files: files.map(f => f.path),
     languages_detected: languagesDetected,
@@ -1369,50 +1366,26 @@ function analyzePolyglotQuality(
  */
 function predictRisk(m: FileMetrics): FilePrediction {
   const topFeatures: string[] = [];
-
-  let pLow = 0.85;
-  let pMed = 0.10;
-  let pHigh = 0.05;
-  let riskLabel: RiskLabel = 'LOW';
-
-  // Security vulnerabilities immediately escalate file risk tier
-  if (m.security_count >= 2) {
-    pHigh = 0.90;
-    pMed = 0.08;
-    pLow = 0.02;
-    riskLabel = 'HIGH';
-    topFeatures.push(`Critical Security Vulnerabilities (${m.security_count})`);
-  } else if (m.security_count === 1) {
-    pHigh = 0.75;
-    pMed = 0.20;
-    pLow = 0.05;
-    riskLabel = 'HIGH';
-    topFeatures.push(`Security Vulnerability Detected (${m.security_count})`);
-  } else if (m.bug_count >= 2 || m.cyclomatic_complexity > 15) {
-    pHigh = 0.20;
-    pMed = 0.65;
-    pLow = 0.15;
-    riskLabel = 'MEDIUM';
-    if (m.bug_count > 0) topFeatures.push(`AST Bug Candidates (${m.bug_count})`);
-    if (m.cyclomatic_complexity > 15) topFeatures.push(`High Complexity (${m.cyclomatic_complexity})`);
-  } else if (m.bug_count === 1 || m.nested_loops > 1 || m.max_nesting > 3) {
-    pHigh = 0.10;
-    pMed = 0.45;
-    pLow = 0.45;
-    riskLabel = 'MEDIUM';
-    topFeatures.push('Elevated Structural Complexity');
-  } else {
-    topFeatures.push('Standard Complexity Profile');
-  }
+  const riskScore = Math.min(
+    100,
+    Math.round(
+      m.security_count * 75 +
+      m.bug_count * 10 +
+      Math.max(0, m.cyclomatic_complexity - 10) * 1.5 +
+      m.nested_loops * 4
+    )
+  );
+  const riskLabel: RiskLabel = riskScore >= 30 ? 'HIGH' : riskScore >= 15 ? 'MEDIUM' : 'LOW';
+  if (m.security_count > 0) topFeatures.push(`Security findings (${m.security_count})`);
+  if (m.bug_count > 0) topFeatures.push(`Bug findings (${m.bug_count})`);
+  if (m.cyclomatic_complexity > 10) topFeatures.push(`Cyclomatic complexity ${m.cyclomatic_complexity}`);
+  if (m.nested_loops > 0) topFeatures.push(`Nested loops (${m.nested_loops})`);
+  if (topFeatures.length === 0) topFeatures.push('No elevated static-analysis factors detected.');
 
   return {
     path: m.path,
+    risk_score: riskScore,
     risk_label: riskLabel,
-    probabilities: {
-      LOW: pLow,
-      MEDIUM: pMed,
-      HIGH: pHigh,
-    },
     top_features: topFeatures.slice(0, 3),
   };
 }
@@ -1439,8 +1412,7 @@ function calculateQualityScore(findings: Finding[], totalLoc: number): number {
  */
 function calculateRiskScore(
   findings: Finding[],
-  metrics: FileMetrics[],
-  predictions: FilePrediction[]
+  metrics: FileMetrics[]
 ): {
   totalScore: number;
   breakdown: {
@@ -1448,7 +1420,6 @@ function calculateRiskScore(
     bugs: number;
     complexity: number;
     quality: number;
-    ml_risk: number;
   };
 } {
   const secHigh = findings.filter(f => f.source === 'security' && f.severity === 'HIGH').length;
@@ -1480,17 +1451,11 @@ function calculateRiskScore(
   const qualityIssues = findings.filter(f => f.source === 'quality').length;
   const qualityComp = Math.min(100, qualityIssues * 8);
 
-  const highRiskFiles = predictions.filter(p => p.risk_label === 'HIGH').length;
-  const medRiskFiles = predictions.filter(p => p.risk_label === 'MEDIUM').length;
-  const totalFiles = Math.max(predictions.length, 1);
-  const mlComp = Math.min(100, (highRiskFiles * 100 + medRiskFiles * 50) / totalFiles);
-
-  // Base weighted score
+  // This demonstration-only baseline does not model or report calibrated probabilities.
   let weightedScore =
-    securityComp * 0.45 +
-    bugComp * 0.20 +
-    mlComp * 0.20 +
-    complexityComp * 0.10 +
+    securityComp * 0.55 +
+    bugComp * 0.25 +
+    complexityComp * 0.15 +
     qualityComp * 0.05;
 
   // CRITICAL CYBERSECURITY FLOOR ENFORCEMENT:
@@ -1515,7 +1480,6 @@ function calculateRiskScore(
       bugs: Number(bugComp.toFixed(1)),
       complexity: Number(complexityComp.toFixed(1)),
       quality: Number(qualityComp.toFixed(1)),
-      ml_risk: Number(mlComp.toFixed(1)),
     },
   };
 }

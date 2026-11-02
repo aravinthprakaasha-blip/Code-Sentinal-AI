@@ -15,7 +15,7 @@ import {
   signInAnonymously,
   updateProfile,
 } from 'firebase/auth';
-import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
+import { getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize Firebase
@@ -75,25 +75,6 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
-
-/**
- * Tests connection to Firestore server on boot
- */
-export async function testConnection(): Promise<boolean> {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-    return true;
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firebase client is offline. Verify network and configuration.');
-    }
-    // Since /test/connection may not exist as a document, successful reach without network error is valid
-    return true;
-  }
-}
-
-// Trigger connection test on startup
-testConnection();
 
 /**
  * Sign in with Google popup
@@ -183,6 +164,10 @@ export function formatAuthError(error: any): string {
       return 'An account with this email address already exists. Please sign in instead.';
     case 'auth/operation-not-allowed':
       return 'This authentication method is currently not enabled.';
+    case 'auth/unauthorized-domain': {
+      const hostname = typeof window !== 'undefined' ? window.location.hostname : 'your deployed hostname';
+      return `Firebase is blocking sign-in from "${hostname}". Add this hostname in Firebase Console under Authentication → Settings → Authorized domains, then reload the page.`;
+    }
     case 'auth/weak-password':
       return 'Password is too weak. Please choose at least 6 characters.';
     case 'auth/popup-closed-by-user':

@@ -23,19 +23,20 @@ import { LoginView } from './components/LoginView';
 import { Finding, ScanResult, UserProfile } from './types';
 import {
   syncUserProfile,
-  saveScanResult,
-  subscribeToUserScans,
-  deleteUserScan,
 } from './services/firestoreService';
-import { SAMPLE_VULNERABLE_REPO } from './services/repoService';
-import { analyzeRepository } from './services/analyzerService';
+import {
+  AnalysisHistoryItem,
+  deleteAnalysis,
+  getAnalysis,
+  listAnalysisHistory,
+} from './services/apiService';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [activeTab, setActiveTab] = useState<NavTab>('overview');
   const [currentScan, setCurrentScan] = useState<ScanResult | null>(null);
-  const [savedScans, setSavedScans] = useState<any[]>([]);
+  const [savedScans, setSavedScans] = useState<AnalysisHistoryItem[]>([]);
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
   const [isScanning, setIsScanning] = useState(false);
 
@@ -53,7 +54,9 @@ export default function App() {
         };
         setCurrentUser(profile);
         setIsAuthReady(true);
-        await syncUserProfile(profile);
+        syncUserProfile(profile).catch(error => {
+          console.error('Failed to sync the authenticated user profile:', error);
+        });
       } else {
         setCurrentUser(null);
         setSavedScans([]);
@@ -64,34 +67,31 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Subscribe to user scans in Cloud Firestore
+  // Load private analysis history through the Firebase-authenticated API.
   useEffect(() => {
     if (!currentUser) return;
 
-    const unsubscribe = subscribeToUserScans(
-      currentUser.uid,
-      (scans) => {
-        setSavedScans(scans);
-      },
-      (err) => {
-        console.warn('Error fetching Firestore scans:', err);
-      }
-    );
-
-    return () => unsubscribe();
+    let active = true;
+    listAnalysisHistory()
+      .then(scans => {
+        if (active) setSavedScans(scans);
+      })
+      .catch(error => {
+        if (active) console.error('Failed to load private analysis history:', error);
+      });
+    return () => {
+      active = false;
+    };
   }, [currentUser]);
 
   const handleScanComplete = async (scan: ScanResult) => {
     setCurrentScan(scan);
     setActiveTab('overview');
 
-    // Automatically persist to Firestore if user is authenticated
-    if (currentUser) {
-      try {
-        await saveScanResult(currentUser.uid, scan);
-      } catch (err) {
-        console.error('Failed to auto-save scan to Firestore:', err);
-      }
+    try {
+      setSavedScans(await listAnalysisHistory());
+    } catch (error) {
+      console.error('Analysis completed but history could not be refreshed:', error);
     }
   };
 
@@ -100,56 +100,23 @@ export default function App() {
     setActiveTab('reviewer');
   };
 
-  const handleSelectSavedScan = (saved: any) => {
-    // Reconstruct ScanResult from Firestore record
-    const scan: ScanResult = {
-      scan_id: saved.id,
-      repo_url: saved.repoUrl,
-      repo_name: saved.repoName,
-      branch: saved.branch || 'main',
-      commit_sha: saved.commitSha || 'unknown',
-      timestamp: saved.createdAt || saved.timestamp,
-      settings_used: {},
-      files: saved.files || [],
-      languages_detected: saved.languages_detected || {},
-      findings: saved.findings || [],
-      file_metrics: [],
-      predictions: saved.predictions || [],
-      quality_score: saved.qualityScore || 85,
-      risk_score: saved.riskScore || 35,
-      risk_breakdown: {
-        security: saved.riskScore || 30,
-        bugs: 20,
-        complexity: 15,
-        quality: 10,
-        ml_risk: 15,
-      },
-      duration_seconds: saved.durationSeconds || 1.2,
-      warnings: [],
-    };
-    setCurrentScan(scan);
-    setActiveTab('overview');
-  };
-
-  const handleDeleteScan = async (scanId: string) => {
-    if (!currentUser) return;
+  const handleSelectSavedScan = async (saved: AnalysisHistoryItem) => {
     try {
-      await deleteUserScan(currentUser.uid, scanId);
-    } catch (err) {
-      console.error('Failed to delete scan:', err);
+      const scan = await getAnalysis(saved.analysis_id);
+      setCurrentScan(scan);
+      setActiveTab('overview');
+    } catch (error) {
+      console.error('Failed to load saved analysis:', error);
     }
   };
 
-  const handleQuickScanSample = () => {
-    setActiveTab('scanner');
-    // Analyze sample immediately
-    const sampleResult = analyzeRepository(
-      SAMPLE_VULNERABLE_REPO.url,
-      SAMPLE_VULNERABLE_REPO.name,
-      SAMPLE_VULNERABLE_REPO.branch,
-      SAMPLE_VULNERABLE_REPO.files
-    );
-    handleScanComplete(sampleResult);
+  const handleDeleteScan = async (scanId: string) => {
+    try {
+      await deleteAnalysis(scanId);
+      setSavedScans(await listAnalysisHistory());
+    } catch (err) {
+      console.error('Failed to delete scan:', err);
+    }
   };
 
   if (!isAuthReady) {
@@ -208,7 +175,6 @@ export default function App() {
               onDeleteScan={handleDeleteScan}
               onNavigateScanner={() => setActiveTab('scanner')}
               onNavigateSandbox={() => setActiveTab('sandbox')}
-              onScanSample={handleQuickScanSample}
             />
           )}
 
