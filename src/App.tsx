@@ -32,6 +32,7 @@ import { analyzeRepository } from './services/analyzerService';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
   const [activeTab, setActiveTab] = useState<NavTab>('overview');
   const [currentScan, setCurrentScan] = useState<ScanResult | null>(null);
   const [savedScans, setSavedScans] = useState<any[]>([]);
@@ -51,10 +52,12 @@ export default function App() {
           lastLoginAt: new Date().toISOString(),
         };
         setCurrentUser(profile);
+        setIsAuthReady(true);
         await syncUserProfile(profile);
       } else {
         setCurrentUser(null);
         setSavedScans([]);
+        setIsAuthReady(true);
       }
     });
 
@@ -148,6 +151,37 @@ export default function App() {
     );
     handleScanComplete(sampleResult);
   };
+
+  if (!isAuthReady) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
+        <div className="flex items-center gap-3" role="status" aria-label="Loading account">
+          <div className="w-5 h-5 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
+          <span className="text-sm text-slate-400">Loading your workspace...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-cyan-500/30 selection:text-cyan-200">
+        <Navbar
+          currentUser={null}
+          activeRepo=""
+          onNavigateAuth={() => setActiveTab('auth')}
+        />
+        <main className="flex-1 overflow-y-auto p-6 lg:p-8 bg-gradient-to-b from-slate-950 via-slate-950 to-slate-900/60">
+          <LoginView
+            currentUser={null}
+            onNavigateScanner={() => setActiveTab('scanner')}
+            onNavigateSandbox={() => setActiveTab('sandbox')}
+            onNavigateOverview={() => setActiveTab('overview')}
+          />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-cyan-500/30 selection:text-cyan-200">
