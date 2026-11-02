@@ -1,0 +1,152 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile metadata synchronized with Firebase Authentication.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Unique user identification string matching request.auth.uid"
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User display name"
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "Avatar image URL"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp in ISO format"
+        },
+        "lastLoginAt": {
+          "type": "string",
+          "description": "Last sign in timestamp"
+        }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "ScanRecord": {
+      "title": "ScanRecord",
+      "description": "Persisted repository scan summary, metrics, and findings.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique scan identifier"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Owner user UID"
+        },
+        "repoUrl": {
+          "type": "string",
+          "description": "Target GitHub repository URL"
+        },
+        "repoName": {
+          "type": "string",
+          "description": "Owner/repository name slug"
+        },
+        "branch": {
+          "type": "string",
+          "description": "Git branch analyzed"
+        },
+        "commitSha": {
+          "type": "string",
+          "description": "Commit SHA or identifier"
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Timestamp of scan completion"
+        },
+        "qualityScore": {
+          "type": "number",
+          "description": "Calculated code quality score from 0 to 100"
+        },
+        "riskScore": {
+          "type": "number",
+          "description": "Calculated repository risk score from 0 to 100"
+        },
+        "riskLabel": {
+          "type": "string",
+          "description": "Risk tier: LOW, MEDIUM, or HIGH"
+        },
+        "filesCount": {
+          "type": "number",
+          "description": "Total Python files analyzed"
+        },
+        "findingsCount": {
+          "type": "number",
+          "description": "Total detected findings across all analyzers"
+        },
+        "durationSeconds": {
+          "type": "number",
+          "description": "Duration of the scan in seconds"
+        },
+        "status": {
+          "type": "string",
+          "description": "Scan status"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp"
+        }
+      },
+      "required": ["id", "userId", "repoName", "riskScore", "qualityScore", "createdAt"]
+    },
+    "UserPreference": {
+      "title": "UserPreference",
+      "description": "User specific scanner configuration and UI preferences.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner user UID"
+        },
+        "geminiModel": {
+          "type": "string",
+          "description": "Selected Gemini model identifier"
+        },
+        "maxFileSizeKb": {
+          "type": "number",
+          "description": "Max file size to analyze in kilobytes"
+        },
+        "maxScanTimeSec": {
+          "type": "number",
+          "description": "Max scan timeout in seconds"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp when preferences were last updated"
+        }
+      },
+      "required": ["userId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "Primary user profiles securely accessible by the authenticating user."
+    },
+    "/users/{userId}/scans/{scanId}": {
+      "schema": {
+        "$ref": "#/entities/ScanRecord"
+      },
+      "description": "Subcollection of repository scans owned and executed by the user."
+    },
+    "/users/{userId}/settings/preferences": {
+      "schema": {
+        "$ref": "#/entities/UserPreference"
+      },
+      "description": "User customized scanner and theme preferences."
+    }
+  }
+}

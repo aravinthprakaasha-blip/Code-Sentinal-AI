@@ -1,0 +1,6 @@
+{
+  "name": "CodeSentry AI",
+  "description": "Polyglot automated code-review and security platform analyzing repositories across all programming languages (Python, TypeScript, JavaScript, Java, C/C++, Go, Rust, PHP, SQL, Shell) with static analyzers, ML risk scoring, and Google Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

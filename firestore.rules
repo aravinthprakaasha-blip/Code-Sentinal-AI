@@ -1,0 +1,101 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Security Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Entity Validation: UserProfile
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'email'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'createdAt', 'lastLoginAt'])
+        && data.uid == request.auth.uid
+        && data.uid == userId
+        && data.email is string
+        && data.email.size() <= 254;
+    }
+
+    // Entity Validation: ScanRecord
+    function isValidScanRecord(data, userId, scanId) {
+      return data.keys().hasAll(['id', 'userId', 'repoName', 'riskScore', 'qualityScore', 'createdAt'])
+        && data.keys().hasOnly([
+          'id', 'userId', 'repoUrl', 'repoName', 'branch', 'commitSha',
+          'timestamp', 'qualityScore', 'riskScore', 'riskLabel', 'filesCount',
+          'findingsCount', 'durationSeconds', 'status', 'createdAt', 'findings', 'predictions', 'summary'
+        ])
+        && data.id == scanId
+        && data.userId == request.auth.uid
+        && data.userId == userId
+        && data.repoName is string && data.repoName.size() <= 256
+        && data.riskScore is number && data.riskScore >= 0 && data.riskScore <= 100
+        && data.qualityScore is number && data.qualityScore >= 0 && data.qualityScore <= 100;
+    }
+
+    // Entity Validation: UserPreference
+    function isValidUserPreference(data, userId) {
+      return data.keys().hasAll(['userId'])
+        && data.keys().hasOnly(['userId', 'geminiModel', 'maxFileSizeKb', 'maxScanTimeSec', 'updatedAt'])
+        && data.userId == request.auth.uid
+        && data.userId == userId;
+    }
+
+    // Connection testing endpoint
+    match /test/connection {
+      allow read: if true;
+    }
+
+    // User Profile Documents
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUserProfile(incoming(), userId);
+      allow update: if isOwner(userId) && isValidId(userId) && isValidUserProfile(incoming(), userId)
+                    && incoming().uid == existing().uid;
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      // Scans Subcollection
+      match /scans/{scanId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(scanId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(scanId)
+                      && isValidScanRecord(incoming(), userId, scanId);
+        allow update: if isOwner(userId) && isValidId(userId) && isValidId(scanId)
+                      && isValidScanRecord(incoming(), userId, scanId)
+                      && incoming().userId == existing().userId
+                      && incoming().id == existing().id;
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(scanId);
+      }
+
+      // Settings Subcollection
+      match /settings/preferences {
+        allow get: if isOwner(userId) && isValidId(userId);
+        allow create, update: if isOwner(userId) && isValidId(userId)
+                              && isValidUserPreference(incoming(), userId);
+        allow delete: if isOwner(userId) && isValidId(userId);
+      }
+    }
+  }
+}
