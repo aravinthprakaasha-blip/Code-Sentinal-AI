@@ -45,7 +45,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, currentScan, currentUser }) => {
   const bugCount = currentScan?.findings.filter(f => f.source === 'bug').length || 0;
-  const secCount = currentScan?.findings.filter(f => f.source === 'security').length || 0;
+  const secCount = currentScan?.findings.filter(f => f.source === 'security' || f.source === 'dependency').length || 0;
   const qualCount = currentScan?.findings.filter(f => f.source === 'quality').length || 0;
 
   const navItems = [

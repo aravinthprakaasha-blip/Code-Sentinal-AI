@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { Bug, Filter, Sparkles, ChevronDown, ChevronRight, HelpCircle } from 'lucide-react';
 import { Finding, ScanResult, SeverityLevel } from '../types';
+import { AiFindingPanel, severityBadgeClass } from './AiFindingPanel';
 
 interface BugsViewProps {
   currentScan: ScanResult | null;
@@ -86,6 +87,7 @@ export const BugsView: React.FC<BugsViewProps> = ({ currentScan, onSelectFinding
             className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
           >
             <option value="ALL">All Severities</option>
+            <option value="CRITICAL">Critical Severity</option>
             <option value="HIGH">High Severity</option>
             <option value="MEDIUM">Medium Severity</option>
             <option value="LOW">Low Severity</option>
@@ -108,9 +110,9 @@ export const BugsView: React.FC<BugsViewProps> = ({ currentScan, onSelectFinding
               >
                 <div
                   onClick={() => setExpandedId(isExpanded ? null : finding.id)}
-                  className="p-4 flex items-center justify-between cursor-pointer select-none"
+                  className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-2 cursor-pointer select-none"
                 >
-                  <div className="flex items-center space-x-3">
+                  <div className="flex flex-wrap items-center gap-2 min-w-0">
                     {isExpanded ? (
                       <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
                     ) : (
@@ -118,13 +120,7 @@ export const BugsView: React.FC<BugsViewProps> = ({ currentScan, onSelectFinding
                     )}
 
                     <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded border font-mono ${
-                        finding.severity === 'HIGH'
-                          ? 'bg-rose-950 text-rose-400 border-rose-800'
-                          : finding.severity === 'MEDIUM'
-                          ? 'bg-amber-950 text-amber-400 border-amber-800'
-                          : 'bg-blue-950 text-blue-400 border-blue-800'
-                      }`}
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded border font-mono ${severityBadgeClass(finding.severity)}`}
                     >
                       {finding.severity}
                     </span>
@@ -155,13 +151,29 @@ export const BugsView: React.FC<BugsViewProps> = ({ currentScan, onSelectFinding
 
                 {isExpanded && (
                   <div className="px-4 pb-4 pt-1 border-t border-slate-800/60 bg-slate-950/40 space-y-3">
+                    <div className="flex flex-wrap gap-2 text-[10px] text-slate-400">
+                      {finding.category && <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-200">{finding.category}</span>}
+                      {finding.analyzer && <span>Detected by <strong className="text-slate-300">{finding.analyzer}</strong></span>}
+                      <span>Confidence <strong className="text-slate-300">{finding.confidence}</strong></span>
+                      {finding.is_heuristic && <span className="text-amber-300">Heuristic match — verify manually</span>}
+                    </div>
                     <p className="text-xs text-slate-300 leading-relaxed">{finding.description}</p>
 
-                    {finding.snippet && (
+                    {(finding.context || finding.snippet) && (
                       <div className="rounded-lg bg-black/80 border border-slate-800 p-3 font-mono text-[11px] text-slate-300 overflow-x-auto">
-                        <pre>{finding.snippet}</pre>
+                        <pre>{finding.context || finding.snippet}</pre>
                       </div>
                     )}
+
+                    {finding.references && finding.references.length > 0 && (
+                      <div className="flex flex-wrap gap-3 text-[11px]">
+                        {finding.references.filter(ref => /^https:\/\//.test(ref)).map(ref => (
+                          <a key={ref} href={ref} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline break-all">{ref}</a>
+                        ))}
+                      </div>
+                    )}
+
+                    <AiFindingPanel review={currentScan.ai_review?.findings?.[finding.id]} />
 
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
                       <div className="text-[11px] text-slate-400">

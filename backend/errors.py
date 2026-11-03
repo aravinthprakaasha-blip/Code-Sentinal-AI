@@ -10,7 +10,9 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 logger = logging.getLogger(__name__)
 
 
-def error_response(status_code: int, code: str, message: str) -> JSONResponse:
+def error_response(
+    status_code: int, code: str, message: str, headers: dict[str, str] | None = None
+) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
         content={
@@ -18,6 +20,7 @@ def error_response(status_code: int, code: str, message: str) -> JSONResponse:
             "data": None,
             "error": {"code": code, "message": message},
         },
+        headers=headers,
     )
 
 
@@ -42,7 +45,12 @@ async def http_exception_handler(
         503: "service_unavailable",
         504: "upstream_timeout",
     }.get(exc.status_code, "request_failed")
-    return error_response(exc.status_code, code, detail)
+    headers = {
+        key: value
+        for key, value in (getattr(exc, "headers", None) or {}).items()
+        if key.lower() in {"retry-after", "www-authenticate"}
+    }
+    return error_response(exc.status_code, code, detail, headers or None)
 
 
 async def validation_exception_handler(
@@ -54,4 +62,18 @@ async def validation_exception_handler(
         request.url.path,
         len(exc.errors()),
     )
-    return error_response(422, "invalid_request", "Request validation failed.")
+    # Report which fields failed without echoing submitted values (which may hold tokens or code).
+    fields = sorted(
+        {
+            ".".join(str(part) for part in error.get("loc", ())[1:] if not isinstance(part, int))
+            for error in exc.errors()
+        }
+        - {""}
+    )
+    messages = sorted({str(error.get("msg", "")).removeprefix("Value error, ") for error in exc.errors()})
+    detail = "Request validation failed"
+    if fields:
+        detail += f" for: {', '.join(fields[:5])}"
+    if messages and len(messages) <= 2:
+        detail += f" ({'; '.join(messages)})"
+    return error_response(422, "invalid_request", detail + ".")

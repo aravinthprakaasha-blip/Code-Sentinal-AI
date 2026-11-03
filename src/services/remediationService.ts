@@ -180,6 +180,20 @@ export interface AutoCorrectionResult {
   }[];
 }
 
+/** Maps backend rule IDs onto the correction templates below. */
+const RULE_ALIASES: Record<string, string> = {
+  'PY-DIV-ZERO': 'BUG-DIV-001',
+  'SECRET-ASSIGNMENT': 'B105',
+  'JS-EXEC-DYNAMIC': 'SEC-JS-EXEC',
+  'JS-INNERHTML': 'SEC-JS-XSS',
+  'JS-EVAL': 'SEC-JS-EVAL',
+  'GO-SQL-FORMAT': 'SEC-GO-SQLI',
+  'GO-CMD-SHELL': 'SEC-GO-EXEC',
+  'RS-SHELL-COMMAND': 'SEC-RUST-CMD',
+  'C-GETS': 'SEC-C-GETS',
+  'C-UNSAFE-STRING': 'SEC-C-OVERFLOW',
+};
+
 /**
  * Automatically corrects and refactors known security and bug patterns in user code.
  */
@@ -195,7 +209,7 @@ export function autoCorrectCodeSnippet(
   const sortedFindings = [...findings].sort((a, b) => b.line_start - a.line_start);
 
   for (const finding of sortedFindings) {
-    const rule = finding.rule_id;
+    const rule = RULE_ALIASES[finding.rule_id] ?? finding.rule_id;
 
     // Python SQL Injection (B608)
     if (rule === 'B608') {

@@ -26,7 +26,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ currentScan }) => {
   }
 
   const generateMarkdownReport = (): string => {
-    const secFindings = currentScan.findings.filter(f => f.source === 'security');
+    const secFindings = currentScan.findings.filter(f => f.source === 'security' || f.source === 'dependency');
+    const cov = currentScan.coverage;
     const bugFindings = currentScan.findings.filter(f => f.source === 'bug');
     const qualFindings = currentScan.findings.filter(f => f.source === 'quality');
 
@@ -43,13 +44,18 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ currentScan }) => {
 ## Executive Summary
 - **Overall Risk Score:** **${currentScan.risk_score} / 100** (${currentScan.risk_label || (currentScan.risk_score >= 80 ? 'CRITICAL' : currentScan.risk_score >= 60 ? 'HIGH' : currentScan.risk_score >= 30 ? 'MEDIUM' : 'LOW')})
 - **Code Quality Score:** **${currentScan.quality_score} / 100**
-- **Repository Files:** ${currentScan.repository_file_count ?? currentScan.total_files_scanned ?? currentScan.files.length}
-**Python Files Scanned:** ${currentScan.total_files_scanned ?? currentScan.python_file_count ?? currentScan.files.length}
+- **Security Status:** ${currentScan.security_status?.label || 'n/a'} — ${currentScan.security_status?.message || ''}
+- **Repository Files:** ${cov?.repository_files ?? currentScan.repository_file_count ?? currentScan.files.length}
+- **Files Scanned:** ${cov?.files_scanned ?? currentScan.files.length} (skipped: ${cov?.files_skipped ?? 0}; coverage: ${cov ? `${cov.coverage_status}, ${Math.round(cov.coverage_ratio * 100)}%` : 'unknown'})
+- **Unsupported languages:** ${cov && Object.keys(cov.unsupported_languages).length ? Object.entries(cov.unsupported_languages).map(([l, c]) => `${l} (${c})`).join(', ') : 'none'}
+- **Analysis failures:** ${cov?.analysis_failures.length ? cov.analysis_failures.map(f => `${f.path}: ${f.reason}`).join('; ') : 'none'}
+- **Dependency check:** ${cov?.dependency_scan.status ?? 'n/a'}
 - **Analyzed Languages:** ${Object.entries(currentScan.languages_detected || {}).map(([l, s]) => `${l} (${s.percentage}%)`).join(', ') || 'None'}
 - **Total Findings Detected:** ${currentScan.total_findings ?? currentScan.findings.length}
   - Findings included in this report: ${currentScan.findings.length}${currentScan.findings_truncated ? ' (highest severity first; remaining finding details omitted to keep the report within storage limits)' : ''}
-  - Bandit Security Findings: ${currentScan.source_counts?.security ?? secFindings.length}
-  - AST Bug Candidates: ${currentScan.source_counts?.bug ?? bugFindings.length}
+  - Security findings (Bandit, rules, secrets): ${currentScan.source_counts?.security ?? 0}
+  - Vulnerable dependencies: ${currentScan.source_counts?.dependency ?? 0}
+  - Bug findings: ${currentScan.source_counts?.bug ?? bugFindings.length}
   - Code Quality Deficits: ${currentScan.source_counts?.quality ?? qualFindings.length}
 
 ---
@@ -60,12 +66,14 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ currentScan }) => {
 - **Cyclomatic complexity and nested loops:** ${currentScan.risk_breakdown?.complexity || 0} / 100
 - **Quality deficits:** ${currentScan.risk_breakdown?.quality || 0} / 100
 - **Risk rationale:** ${(currentScan.risk_reasons || []).join('; ') || 'No risk reasons were reported.'}
+- **How the score is calculated:** ${currentScan.risk_explanation || 'transparent rule-based model'}
 
 ---
 
-## Security Vulnerabilities (Bandit & CWE Mapping)
+## Security Vulnerabilities
 ${secFindings.length === 0 ? '_No security vulnerabilities detected._' : secFindings.map(f => `
 ### [${f.severity}] ${f.rule_id} - ${f.title}
+- **Category:** ${f.category || 'n/a'} (detected by ${f.analyzer || 'scanner'}${f.is_heuristic ? ', heuristic — verify manually' : ''})
 - **Location:** \`${f.file_path}:${f.line_start}\`
 - **CWE:** ${f.cwe || 'N/A'}
 - **Confidence:** ${f.confidence}
@@ -93,7 +101,7 @@ ${currentScan.predictions.map(p => `| \`${p.path}\` | ${p.risk_score}/100 | **${
 
 ---
 
-## Gemini AI Recommendations
+## Gemini AI Recommendations (AI-generated suggestions, not verified fixes)
 ${currentScan.ai_review?.status === 'available' ? [
   currentScan.ai_review.repository_review || '',
   ...(currentScan.ai_review.recommendations || []).map(item =>
@@ -104,7 +112,7 @@ ${currentScan.ai_review?.status === 'available' ? [
 ---
 
 ## Disclaimer & Limitations
-This report contains Python AST and Pyflakes results, Bandit security findings, and a transparent rule-based risk baseline. No trained ML model is used. Static-analysis findings may require human validation and do not represent a formal penetration test. Review and test AI-generated recommendations before applying them.
+This report contains Python AST/Pyflakes/Bandit results, heuristic multi-language security rules, secret detection, OSV.dev dependency results (when available) and a transparent rule-based risk score covering only the files that were scanned. No findings does not mean the code is secure. No trained ML model is used. Static-analysis findings may require human validation and do not represent a formal penetration test. Review and test AI-generated recommendations before applying them.
 `;
   };
 

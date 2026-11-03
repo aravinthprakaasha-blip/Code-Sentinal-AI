@@ -45,19 +45,18 @@ export function verifyPythonSyntax(code: string): boolean {
 /**
  * Generates unified diff string between original and corrected snippets
  */
-export function generateUnifiedDiff(filePath: string, original: string, corrected: string): string {
-  const origLines = original.split('\n');
-  const corrLines = corrected.split('\n');
+export function generateUnifiedDiff(filePath: string, original: string, corrected: string, startLine = 1): string {
+  const origLines = original.replace(/\n$/, '').split('\n');
+  const corrLines = corrected.replace(/\n$/, '').split('\n');
+  const start = Math.max(1, startLine);
 
-  let patch = `--- a/${filePath}\n+++ b/${filePath}\n@@ -1,${origLines.length} +1,${corrLines.length} @@\n`;
-
+  let patch = `--- a/${filePath}\n+++ b/${filePath}\n@@ -${start},${origLines.length} +${start},${corrLines.length} @@\n`;
   origLines.forEach(line => {
     patch += `-${line}\n`;
   });
   corrLines.forEach(line => {
     patch += `+${line}\n`;
   });
-
   return patch;
 }
 
@@ -68,11 +67,9 @@ export async function generateAIReview(
   finding: Finding,
   fileContent: string
 ): Promise<AIReview> {
-  const lines = fileContent.split('\n');
-  const start = Math.max(0, finding.line_start - 10);
-  const end = Math.min(lines.length, finding.line_end + 10);
-  const snippet = lines.slice(start, end).join('\n');
-  return generateBackendFindingReview(finding, snippet);
+  // The backend stores redacted context lines around each finding; prefer them over the single flagged line.
+  const snippet = finding.context || fileContent;
+  return generateBackendFindingReview(finding, snippet.slice(0, 4000));
 }
 
 /**
@@ -97,11 +94,17 @@ export async function askAssistantQuestion(
   }
 
   if (lowerQ.includes('how many vulnerabilities') || lowerQ.includes('security issues')) {
-    const secFindings = scan.findings?.filter((f: any) => f.source === 'security') || [];
-    return `CodeSentry AI identified **${secFindings.length} security findings**.\n` +
-      `- High Severity: ${secFindings.filter((f: any) => f.severity === 'HIGH').length}\n` +
-      `- Medium Severity: ${secFindings.filter((f: any) => f.severity === 'MEDIUM').length}\n` +
-      `- Most common rule: ${secFindings[0]?.rule_id || 'None'} (${secFindings[0]?.cwe || 'N/A'}).`;
+    const secFindings = scan.findings?.filter(f => f.source === 'security' || f.source === 'dependency') || [];
+    const count = (severity: string) => secFindings.filter(f => f.severity === severity).length;
+    const categories = Object.entries(scan.category_counts || {})
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name, total]) => `${name} (${total})`)
+      .join(', ');
+    return `CodeSentry AI reported **${secFindings.length} security/dependency findings** in this scan.\n` +
+      `- Critical: ${count('CRITICAL')}, High: ${count('HIGH')}, Medium: ${count('MEDIUM')}, Low: ${count('LOW')}\n` +
+      `- Most common categories: ${categories || 'none'}\n` +
+      `- Coverage: ${scan.coverage?.coverage_status || 'unknown'} — findings only cover files that were actually scanned.`;
   }
 
   if (lowerQ.includes('explain quality') || lowerQ.includes('quality score')) {
@@ -115,9 +118,9 @@ export async function askAssistantQuestion(
       `The current risk score is ${scan.risk_score}/100. Contributing factors: ${(scan.risk_reasons || []).join('; ') || 'none reported'}.`;
   }
 
-  const aiAnswer = await askBackendAssistant(question, scan);
-  if (aiAnswer) return aiAnswer;
-  return `Gemini AI is not available. Current scan: **${scan.repo_name}** has a risk score of ` +
-    `**${scan.risk_score}/100**, a quality score of **${scan.quality_score}/100**, and ` +
-    `**${scan.findings.length}** scanner finding(s). Configure GEMINI_API_KEY on the backend to enable AI answers.`;
+  const { answer, reason } = await askBackendAssistant(question, scan);
+  if (answer) return answer;
+  return `Gemini AI could not answer: ${reason || 'the AI assistant is unavailable.'}\n\n` +
+    `Current scan: **${scan.repo_name}** has a risk score of **${scan.risk_score}/100**, a quality score of ` +
+    `**${scan.quality_score}/100**, and **${scan.total_findings ?? scan.findings.length}** scanner finding(s).`;
 }

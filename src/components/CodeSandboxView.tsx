@@ -28,6 +28,7 @@ import {
 import { Finding, ScanResult } from '../types';
 import { FileData } from '../services/analyzerService';
 import { analyzeFilesOnBackend } from '../services/apiService';
+import { SUPPORTED_UPLOAD_PATTERN } from './ScannerView';
 import {
   CODE_EXAMPLES,
   CodeExample,
@@ -89,8 +90,8 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
 
   const analyzeSnippet = async (codeToTest: string, path: string, langHint?: string) => {
     if (!codeToTest.trim()) return;
-    if (!path.toLowerCase().endsWith('.py') && !path.toLowerCase().endsWith('.pyi')) {
-      setBanner({ message: 'The backend currently analyzes Python files only. Select a .py or .pyi file.', isError: true });
+    if (!SUPPORTED_UPLOAD_PATTERN.test(path)) {
+      setBanner({ message: 'Unsupported file type. Use an extension such as .py, .js, .ts, .java, .go, .php, .rb, .c or .rs.', isError: true });
       setFindings([]);
       setRiskScore(null);
       return;
@@ -100,7 +101,8 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
 
     try {
       const files: FileData[] = [{ path, content: codeToTest, language: langHint }];
-      const scan = await analyzeFilesOnBackend('self-code-snippet', files);
+      // Sandbox experiments are not written to the user's analysis history.
+      const scan = await analyzeFilesOnBackend('self-code-snippet', files, 'local://sandbox', { saveHistory: false });
 
       setFindings(scan.findings);
       setRiskScore(scan.risk_score);
@@ -123,25 +125,26 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
 
   const handleAutoCorrectAll = async () => {
     if (findings.length === 0) return;
-    if (!fileName.toLowerCase().endsWith('.py') && !fileName.toLowerCase().endsWith('.pyi')) {
-      setBanner({ message: 'The backend currently analyzes Python files only. Select a .py or .pyi file.', isError: true });
-      return;
-    }
 
     // Detect language from extension
     const ext = fileName.split('.').pop() || 'py';
     const lang = ext === 'js' ? 'JavaScript' : ext === 'go' ? 'Go' : ext === 'rs' ? 'Rust' : ext === 'c' ? 'C' : 'Python';
-
     const result = autoCorrectCodeSnippet(codeText, lang, findings);
+    if (result.remediatedCount === 0) {
+      setBanner({ message: 'None of the current findings has a built-in correction template. Use the AI Reviewer for suggested fixes.', isError: false });
+      return;
+    }
     setLastCorrection(result);
     setCodeText(result.correctedCode);
 
-    // Immediately re-analyze corrected code to show 0 bugs!
+    // Re-analyze the corrected code so the user sees what remains.
     setIsAnalyzing(true);
     try {
       const reanalyzed = await analyzeFilesOnBackend(
         'self-code-snippet',
-        [{ path: fileName, content: result.correctedCode }]
+        [{ path: fileName, content: result.correctedCode }],
+        'local://sandbox',
+        { saveHistory: false }
       );
       setFindings(reanalyzed.findings);
       setRiskScore(reanalyzed.risk_score);
@@ -161,14 +164,14 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
   };
 
   const handleFixSingleFinding = async (finding: Finding) => {
-    if (!fileName.toLowerCase().endsWith('.py') && !fileName.toLowerCase().endsWith('.pyi')) {
-      setBanner({ message: 'The backend currently analyzes Python files only. Select a .py or .pyi file.', isError: true });
-      return;
-    }
     const ext = fileName.split('.').pop() || 'py';
     const lang = ext === 'js' ? 'JavaScript' : ext === 'go' ? 'Go' : ext === 'rs' ? 'Rust' : ext === 'c' ? 'C' : 'Python';
 
     const result = autoCorrectCodeSnippet(codeText, lang, [finding]);
+    if (result.remediatedCount === 0) {
+      setBanner({ message: `No correction template is available for ${finding.rule_id}. Use the AI Reviewer for a suggested fix.`, isError: false });
+      return;
+    }
     if (result.remediatedCount > 0) {
       setLastCorrection(result);
       setCodeText(result.correctedCode);
@@ -178,7 +181,9 @@ export const CodeSandboxView: React.FC<CodeSandboxViewProps> = ({
       try {
         const reanalyzed = await analyzeFilesOnBackend(
           'self-code-snippet',
-          [{ path: fileName, content: result.correctedCode }]
+          [{ path: fileName, content: result.correctedCode }],
+          'local://sandbox',
+          { saveHistory: false }
         );
         setFindings(reanalyzed.findings);
         setRiskScore(reanalyzed.risk_score);

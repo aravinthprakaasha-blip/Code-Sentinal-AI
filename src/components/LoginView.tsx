@@ -270,7 +270,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
           <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
             <div>
               <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Security Engine</p>
-              <p className="text-2xl font-bold text-slate-100 mt-1">Python Analysis</p>
+              <p className="text-2xl font-bold text-slate-100 mt-1">Multi-language</p>
               <p className="text-[11px] text-emerald-400 mt-1 flex items-center space-x-1">
                 <Shield className="w-3 h-3" />
                 <span>AST, Pyflakes, and Bandit</span>
@@ -319,7 +319,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-cyan-400 transition-colors" />
                 </div>
                 <p className="text-xs text-slate-400 mt-1">
-                  Scan a public GitHub repository or uploaded Python source with server-side analysis.
+                  Scan a GitHub repository or uploaded source files with server-side analysis.
                 </p>
               </div>
             </button>
@@ -334,7 +334,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
               <div className="flex-1">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-slate-200 group-hover:text-cyan-300 transition-colors">
-                    Python Sandbox & Suggestions
+                    Code Sandbox & Suggestions
                   </h3>
                   <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-cyan-400 transition-colors" />
                 </div>
@@ -367,7 +367,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
               </span>
             </h1>
             <p className="text-sm text-slate-400 leading-relaxed">
-              Authenticated Python static analysis with server-side security scanning and explainable risk results.
+              Authenticated static analysis with server-side security scanning, secret and dependency checks, AI review, and explainable risk results.
             </p>
           </div>
 
@@ -389,9 +389,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 <ShieldAlert className="w-4 h-4" />
               </div>
               <div>
-                <p className="text-xs font-semibold text-slate-200">Python Static Analysis</p>
+                <p className="text-xs font-semibold text-slate-200">Static & Security Analysis</p>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Server-side Python AST, Pyflakes, and Bandit checks for public repositories or uploaded source.
+                  Python AST, Pyflakes and Bandit plus multi-language security rules, secret detection and OSV.dev dependency checks.
                 </p>
               </div>
             </div>
@@ -403,7 +403,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
               <div>
                 <p className="text-xs font-semibold text-slate-200">Automated Bug Correction</p>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Instant error-correcting suggestions with syntax validation and visual diffing.
+                  Template fixes for common patterns and AI-suggested corrections with before/after diffs — always review before applying.
                 </p>
               </div>
             </div>

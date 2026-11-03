@@ -24,9 +24,19 @@ import {
   POPULAR_PRESET_REPOS,
 } from '../services/repoService';
 import { FileData } from '../services/analyzerService';
-import { analyzeFilesOnBackend, analyzeRepositoryOnBackend } from '../services/apiService';
+import {
+  analyzeFilesOnBackend,
+  analyzeRepositoryOnBackend,
+  listRepositoryBranches,
+} from '../services/apiService';
 import { CODE_EXAMPLES } from '../services/remediationService';
 import { ScanResult } from '../types';
+
+/** File extensions the backend can analyze (source, configuration, and dependency manifests). */
+export const SUPPORTED_UPLOAD_PATTERN =
+  /(\.(py|pyi|js|jsx|mjs|cjs|ts|tsx|mts|cts|java|go|php|rb|c|h|cc|cpp|cxx|hpp|rs|sh|bash|zsh|yml|yaml|json|toml|ini|cfg|conf|properties|xml|tf|rules|sql|gradle|env)|(^|\/)(dockerfile[^/]*|\.env[^/]*|requirements[^/]*\.txt|poetry\.lock|pipfile\.lock))$/i;
+const SUPPORTED_UPLOAD_ACCEPT =
+  '.py,.pyi,.js,.jsx,.mjs,.cjs,.ts,.tsx,.java,.go,.php,.rb,.c,.h,.cc,.cpp,.hpp,.rs,.sh,.yml,.yaml,.json,.toml,.ini,.cfg,.conf,.properties,.xml,.tf,.rules,.sql,.txt,.lock,.env';
 
 interface ScannerViewProps {
   onScanComplete: (scan: ScanResult) => void;
@@ -54,14 +64,61 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const [customFileName, setCustomFileName] = useState('app.py');
   const [urlError, setUrlError] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
-  const [activeStepIndex, setActiveStepIndex] = useState(0);
+  const [activeStepIndex, setActiveStepIndex] = useState(-1);
+  const [failedStep, setFailedStep] = useState<number | null>(null);
+  const [branches, setBranches] = useState<string[]>([]);
+  const [branchesFor, setBranchesFor] = useState('');
+  const [isLoadingBranches, setIsLoadingBranches] = useState(false);
+  const [branchError, setBranchError] = useState<string | null>(null);
+  const [showPrivate, setShowPrivate] = useState(false);
+  const [githubToken, setGithubToken] = useState('');
 
-  const steps: ScanStep[] = [
-    { id: 1, label: 'Validate repository or source file paths', status: activeStepIndex > 0 ? 'completed' : activeStepIndex === 0 && isScanning ? 'active' : 'pending' },
-    { id: 2, label: 'Retrieve Python source without executing repository code', status: activeStepIndex > 1 ? 'completed' : activeStepIndex === 1 && isScanning ? 'active' : 'pending' },
-    { id: 3, label: 'Run Python AST checks, Pyflakes, and Bandit', status: activeStepIndex > 2 ? 'completed' : activeStepIndex === 2 && isScanning ? 'active' : 'pending' },
-    { id: 4, label: 'Calculate explainable risk and save private analysis history', status: activeStepIndex > 3 ? 'completed' : activeStepIndex === 3 && isScanning ? 'active' : 'pending' },
+  const stepLabels = [
+    'Validate the repository URL or uploaded file paths',
+    'Retrieve repository metadata, branch and source files (code is never executed)',
+    'Static analysis: Python AST, Pyflakes, Bandit, multi-language rules, secrets, dependencies',
+    'AI review of top findings (Gemini, backend only), risk scoring and saving to private history',
   ];
+  const steps: ScanStep[] = stepLabels.map((label, index) => ({
+    id: index + 1,
+    label,
+    status:
+      failedStep === index
+        ? 'error'
+        : activeStepIndex > index
+        ? 'completed'
+        : activeStepIndex === index && isScanning
+        ? 'active'
+        : 'pending',
+  }));
+
+  const normalizeRepoInput = (value: string) => {
+    const validation = parseUniversalRepoUrl(value);
+    if (!validation.isValid || !validation.info || validation.info.provider !== 'github') return null;
+    return validation.info;
+  };
+
+  const loadBranches = async () => {
+    const info = normalizeRepoInput(repoUrl);
+    setBranchError(null);
+    if (!info) {
+      setBranchError('Enter a valid GitHub repository first.');
+      return;
+    }
+    if (branchesFor === info.normalizedUrl + (githubToken ? ':token' : '')) return;
+    setIsLoadingBranches(true);
+    try {
+      const result = await listRepositoryBranches(info.normalizedUrl, githubToken.trim() || undefined);
+      setBranches(result.branches);
+      setBranchesFor(info.normalizedUrl + (githubToken ? ':token' : ''));
+      if (!branch && result.default_branch) setBranch(result.default_branch);
+    } catch (err: any) {
+      setBranches([]);
+      setBranchError(err?.message || 'Could not load branches.');
+    } finally {
+      setIsLoadingBranches(false);
+    }
+  };
 
   const appendLog = (msg: string) => {
     setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
@@ -72,25 +129,31 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     analyze: () => Promise<ScanResult>
   ) => {
     setIsScanning(true);
+    setFailedStep(null);
     setLogs([]);
 
     try {
-      setActiveStepIndex(0);
-      appendLog(`Submitting ${repoName} to the authenticated CodeSentry backend.`);
       setActiveStepIndex(1);
-      setActiveStepIndex(2);
-      appendLog('Backend is running Python parsing, static checks, security scanning, and risk calculation.');
+      appendLog(`Submitting ${repoName} to the authenticated CodeSentry backend.`);
+      appendLog('The backend retrieves files, runs static analysis, asks Gemini to explain the top findings, and scores risk. Large repositories can take a few minutes.');
       const scanResult = await analyze();
-      setActiveStepIndex(3);
+      setActiveStepIndex(4);
       if (scanResult.logs && scanResult.logs.length > 0) {
         setLogs(prev => [...prev, ...scanResult.logs!]);
       }
-      if (scanResult.ai_review?.status !== 'available') {
-        appendLog(scanResult.ai_review?.reason || 'Gemini recommendations are not configured.');
+      for (const warning of scanResult.warnings || []) appendLog(`WARNING: ${warning}`);
+      if (scanResult.ai_review?.status === 'available') {
+        appendLog(`Gemini reviewed ${scanResult.ai_review.reviewed_finding_count ?? 0} finding(s) (AI suggestions, not verified fixes).`);
+      } else if (scanResult.ai_review?.status === 'unavailable') {
+        appendLog(`AI review unavailable: ${scanResult.ai_review.reason || 'unknown reason'}`);
       }
-      appendLog(`Scan complete! Risk Index: ${scanResult.risk_score}/100. Issues detected: ${scanResult.findings.length}.`);
+      appendLog(
+        `Scan complete. Risk ${scanResult.risk_score}/100 (${scanResult.risk_label}). ` +
+        `${scanResult.total_findings ?? scanResult.findings.length} finding(s); coverage ${scanResult.coverage?.coverage_status ?? 'unknown'}.`
+      );
       onScanComplete(scanResult);
     } catch (err: any) {
+      setFailedStep(1);
       appendLog(`ERROR: ${err?.message || 'Scan failed'}`);
       setUrlError(err?.message || 'Analysis failed.');
     } finally {
@@ -136,8 +199,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         ? customFileName
         : `app${finalExt}`;
 
-      if (!finalName.toLowerCase().endsWith('.py') && !finalName.toLowerCase().endsWith('.pyi')) {
-        setUrlError('The backend currently analyzes Python files only. Choose a .py or .pyi source file.');
+      if (!SUPPORTED_UPLOAD_PATTERN.test(finalName)) {
+        setUrlError('Unsupported file type. Use a supported source extension such as .py, .js, .ts, .java, .go, .php, .rb, .c or .rs.');
         return;
       }
       const files: FileData[] = [{ path: finalName, content: customCode, language: detectedLang }];
@@ -155,7 +218,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     }
     const repositoryInfo = validation.info;
     if (!repositoryInfo || repositoryInfo.provider !== 'github') {
-      setUrlError('The secure backend currently supports public GitHub repositories only.');
+      setUrlError('CodeSentry currently supports GitHub repositories only.');
       return;
     }
 
@@ -165,7 +228,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         `${repositoryInfo.owner}/${repositoryInfo.repo}`,
         () => analyzeRepositoryOnBackend(
           repositoryInfo.normalizedUrl,
-          branch || repositoryInfo.branch
+          branch.trim() || repositoryInfo.branch,
+          showPrivate ? githubToken.trim() || undefined : undefined
         )
       );
     } catch (err: any) {
@@ -187,14 +251,14 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     if (!uploadedFiles || uploadedFiles.length === 0) return;
 
     const fileList = Array.from(uploadedFiles).filter(file =>
-      /\.(py|pyi)$/i.test(file.name)
+      SUPPORTED_UPLOAD_PATTERN.test(file.webkitRelativePath || file.name)
     );
     if (fileList.length === 0) {
-      setUrlError('The backend currently analyzes Python files only. Upload .py or .pyi files.');
+      setUrlError('None of the selected files are supported. Upload source, configuration or dependency files (for example .py, .js, .ts, .java, .go, .php, requirements.txt, package-lock.json).');
       return;
     }
-    if (fileList.length > 500) {
-      setUrlError('Upload no more than 500 Python files in one analysis.');
+    if (fileList.length > 1000) {
+      setUrlError('Upload no more than 1000 files in one analysis.');
       return;
     }
     const oversizedFile = fileList.find(file => file.size > 500_000);
@@ -203,7 +267,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       return;
     }
     if (fileList.reduce((total, file) => total + file.size, 0) > 20_000_000) {
-      setUrlError('The selected Python files exceed the 20 MB total upload limit.');
+      setUrlError('The selected files exceed the 20 MB total upload limit.');
       return;
     }
 
@@ -222,12 +286,16 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       });
     });
 
+    setUrlError(null);
     Promise.all(readers)
       .then(files => executePipeline(
         `local-upload/${files.length} file(s)`,
-        () => analyzeFilesOnBackend(`local-upload/${files[0].path}`, files)
+        () => analyzeFilesOnBackend(`local-upload/${files[0].path}`, files, 'local://uploaded-source', { includeAi: true })
       ))
-      .catch(error => setUrlError(error.message || 'Could not read uploaded source files.'));
+      .catch(error => setUrlError(error.message || 'Could not read uploaded source files.'))
+      .finally(() => {
+        e.target.value = '';
+      });
   };
 
   return (
@@ -236,15 +304,17 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       <div>
         <h1 className="text-xl font-bold text-slate-100 flex items-center space-x-2">
           <Search className="w-5 h-5 text-cyan-400" />
-          <span>Python Repository Scanner</span>
+          <span>Repository Security Scanner</span>
         </h1>
         <p className="text-xs text-slate-400 mt-1">
-          Scans public GitHub repositories and Python source uploads with server-side AST, Pyflakes, and Bandit analysis.
+          Server-side analysis of GitHub repositories and uploaded files: Python (AST, Pyflakes, Bandit), pattern rules for
+          JavaScript/TypeScript, Java, Go, PHP, Ruby, C/C++, Rust and Shell, secret detection, configuration checks and
+          dependency vulnerabilities (OSV.dev).
         </p>
       </div>
 
       {/* Mode Switcher Tabs */}
-      <div className="flex items-center space-x-2 border-b border-slate-800 pb-3">
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-3">
         <button
           onClick={() => { setScanMode('url'); setUrlError(null); }}
           className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all ${
@@ -281,7 +351,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           <input
             type="file"
             multiple
-            accept=".py,.pyi"
+            accept={SUPPORTED_UPLOAD_ACCEPT}
             onChange={handleFileUpload}
             className="hidden"
           />
@@ -295,7 +365,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div className="md:col-span-3 space-y-1.5">
                 <label className="text-xs font-medium text-slate-300">
-                  Public GitHub URL (e.g. <span className="font-mono text-cyan-400">https://github.com/psf/requests</span>)
+                  GitHub repository URL (e.g. <span className="font-mono text-cyan-400">https://github.com/psf/requests</span>)
                 </label>
                 <div className="relative">
                   <input
@@ -303,8 +373,12 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                     value={repoUrl}
                     onChange={(e) => {
                       setRepoUrl(e.target.value);
+                      setBranches([]);
+                      setBranchesFor('');
+                      setBranchError(null);
                       if (urlError) setUrlError(null);
                     }}
+                    aria-label="GitHub repository URL"
                     placeholder="https://github.com/psf/requests or psf/requests"
                     disabled={isScanning}
                     className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono transition-all"
@@ -314,19 +388,68 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-300">Branch (optional)</label>
+                <label htmlFor="branch-input" className="text-xs font-medium text-slate-300">Branch (optional)</label>
                 <div className="relative">
                   <input
+                    id="branch-input"
                     type="text"
+                    list="branch-options"
                     value={branch}
                     onChange={(e) => setBranch(e.target.value)}
-                    placeholder="Auto-detect"
+                    onFocus={() => { if (repoUrl.trim() && branches.length === 0 && !isLoadingBranches) loadBranches(); }}
+                    placeholder="Default branch"
                     disabled={isScanning}
                     className="w-full pl-8 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono transition-all"
                   />
+                  <datalist id="branch-options">
+                    {branches.map(name => <option key={name} value={name} />)}
+                  </datalist>
                   <GitBranch className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-3" />
                 </div>
+                <button
+                  type="button"
+                  onClick={() => { setBranchesFor(''); loadBranches(); }}
+                  disabled={isScanning || isLoadingBranches || !repoUrl.trim()}
+                  className="text-[11px] text-cyan-400 hover:text-cyan-300 disabled:text-slate-600 cursor-pointer"
+                >
+                  {isLoadingBranches ? 'Loading branches…' : branches.length ? `${branches.length} branch(es) loaded — reload` : 'Load branches'}
+                </button>
               </div>
+            </div>
+
+            {branchError && (
+              <p className="text-[11px] text-amber-300" role="status">{branchError}</p>
+            )}
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3 space-y-2">
+              <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showPrivate}
+                  onChange={(e) => { setShowPrivate(e.target.checked); if (!e.target.checked) setGithubToken(''); }}
+                  disabled={isScanning}
+                />
+                <span>This is a private repository</span>
+              </label>
+              {showPrivate && (
+                <div className="space-y-1">
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={githubToken}
+                    onChange={(e) => setGithubToken(e.target.value)}
+                    placeholder="GitHub token with read access (github_pat_… or ghp_…)"
+                    aria-label="GitHub personal access token"
+                    disabled={isScanning}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700/80 text-xs text-slate-200 font-mono focus:outline-none focus:border-cyan-500"
+                  />
+                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                    Use a fine-grained token limited to this repository with read-only “Contents” and “Metadata” access.
+                    It is sent over HTTPS for this scan only and is never saved, logged or shown again.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Popular Presets */}
@@ -347,7 +470,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             </div>
 
             {urlError && (
-              <div className="p-3 rounded-xl bg-rose-950/50 border border-rose-800/80 text-rose-300 text-xs flex items-center space-x-2">
+              <div role="alert" className="p-3 rounded-xl bg-rose-950/50 border border-rose-800/80 text-rose-300 text-xs flex items-center space-x-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{urlError}</span>
               </div>
@@ -385,11 +508,11 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               <div className="flex items-center justify-between">
                 <span className="text-[11px] text-slate-400 font-medium flex items-center space-x-1">
                   <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Load Python Example Snippet with 1-Click:</span>
+                  <span>Load an example snippet:</span>
                 </span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {CODE_EXAMPLES.filter(ex => ex.fileName.toLowerCase().endsWith('.py') || ex.fileName.toLowerCase().endsWith('.pyi')).map((ex) => (
+                {CODE_EXAMPLES.filter(ex => SUPPORTED_UPLOAD_PATTERN.test(ex.fileName)).map((ex) => (
                   <button
                     key={ex.id}
                     type="button"
@@ -430,7 +553,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             </div>
 
             {urlError && (
-              <div className="p-3 rounded-xl bg-rose-950/50 border border-rose-800/80 text-rose-300 text-xs flex items-center space-x-2">
+              <div role="alert" className="p-3 rounded-xl bg-rose-950/50 border border-rose-800/80 text-rose-300 text-xs flex items-center space-x-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{urlError}</span>
               </div>
@@ -465,6 +588,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               className={`p-3 rounded-xl border flex items-center justify-between text-xs transition-all ${
                 st.status === 'completed'
                   ? 'bg-slate-950/60 border-emerald-900/50 text-slate-200'
+                  : st.status === 'error'
+                  ? 'bg-rose-950/30 border-rose-900 text-rose-200'
                   : st.status === 'active'
                   ? 'bg-blue-950/40 border-cyan-800 text-cyan-200 shadow-md shadow-cyan-950/30'
                   : 'bg-slate-950/30 border-slate-900 text-slate-600'
@@ -480,6 +605,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                 {st.status === 'completed' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
                 {st.status === 'active' && <RotateCw className="w-4 h-4 text-cyan-400 animate-spin" />}
                 {st.status === 'pending' && <Lock className="w-3.5 h-3.5 text-slate-600" />}
+                {st.status === 'error' && <AlertCircle className="w-4 h-4 text-rose-400" />}
               </div>
             </div>
           ))}
@@ -494,7 +620,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               <Terminal className="w-3.5 h-3.5 text-cyan-400" />
               <span>Console Stream</span>
             </div>
-            <span>Python AST / Pyflakes / Bandit / Rule-Based Risk</span>
+            <span>Static analysis · secrets · dependencies · AI review</span>
           </div>
           <div className="space-y-1 max-h-48 overflow-y-auto text-slate-300">
             {logs.map((log, idx) => (

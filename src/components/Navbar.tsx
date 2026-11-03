@@ -37,7 +37,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentUser, activeRepo, onNavig
               CodeSentry AI
             </span>
             <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
-              Python Analysis
+              Code Security Analysis
             </span>
           </div>
           <p className="text-xs text-slate-400 hidden sm:block">Intelligent Code. Secure Software.</p>

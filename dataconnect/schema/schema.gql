@@ -1,0 +1,41 @@
+type Organization @table {
+  name: String!
+  createdAt: Timestamp!
+  subscriptionTier: String
+}
+
+type User @table {
+  email: String!
+  role: String!
+  organization: Organization
+}
+
+type Repository @table {
+  name: String!
+  remoteUrl: String!
+  organization: Organization!
+}
+
+type Analysis @table {
+  status: String!
+  scanDate: Timestamp!
+  commitHash: String
+  durationSeconds: Int
+  repository: Repository!
+}
+
+type Vulnerability @table {
+  type: String!
+  severity: String!
+  description: String!
+  suggestedFix: String
+  status: String
+  analysis: Analysis!
+}
+
+type Policy @table {
+  name: String!
+  ruleSet: String!
+  enforcementLevel: String
+  organization: Organization!
+}

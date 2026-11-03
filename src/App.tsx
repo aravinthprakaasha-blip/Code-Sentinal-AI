@@ -39,6 +39,7 @@ export default function App() {
   const [savedScans, setSavedScans] = useState<AnalysisHistoryItem[]>([]);
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   // Monitor Firebase Auth state
   useEffect(() => {
@@ -74,19 +75,23 @@ export default function App() {
     let active = true;
     listAnalysisHistory()
       .then(scans => {
-        if (active) setSavedScans(scans);
+        if (active) {
+          setSavedScans(scans);
+          setHistoryError(null);
+        }
       })
       .catch(error => {
-        if (active) console.error('Failed to load private analysis history:', error);
+        if (active) setHistoryError(`Analysis history could not be loaded: ${error instanceof Error ? error.message : 'unknown error'}`);
       });
     return () => {
       active = false;
     };
   }, [currentUser]);
 
-  const handleScanComplete = async (scan: ScanResult) => {
+  const handleScanComplete = async (scan: ScanResult, options: { navigate?: boolean } = {}) => {
     setCurrentScan(scan);
-    setActiveTab('overview');
+    if (options.navigate !== false) setActiveTab('overview');
+    if (!scan.saved_to_history) return;
 
     try {
       setSavedScans(await listAnalysisHistory());
@@ -101,21 +106,24 @@ export default function App() {
   };
 
   const handleSelectSavedScan = async (saved: AnalysisHistoryItem) => {
+    setHistoryError(null);
     try {
       const scan = await getAnalysis(saved.analysis_id);
       setCurrentScan(scan);
       setActiveTab('overview');
     } catch (error) {
-      console.error('Failed to load saved analysis:', error);
+      setHistoryError(error instanceof Error ? error.message : 'The saved analysis could not be loaded.');
     }
   };
 
   const handleDeleteScan = async (scanId: string) => {
+    setHistoryError(null);
     try {
       await deleteAnalysis(scanId);
+      if (currentScan?.scan_id === scanId) setCurrentScan(null);
       setSavedScans(await listAnalysisHistory());
     } catch (err) {
-      console.error('Failed to delete scan:', err);
+      setHistoryError(err instanceof Error ? err.message : 'The analysis could not be deleted.');
     }
   };
 
@@ -166,11 +174,12 @@ export default function App() {
           currentUser={currentUser}
         />
 
-        <main className="flex-1 overflow-y-auto p-6 lg:p-8 bg-gradient-to-b from-slate-950 via-slate-950 to-slate-900/60">
+        <main className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-gradient-to-b from-slate-950 via-slate-950 to-slate-900/60">
           {activeTab === 'overview' && (
             <OverviewView
               currentScan={currentScan}
               savedScans={savedScans}
+              historyError={historyError}
               onSelectSavedScan={handleSelectSavedScan}
               onDeleteScan={handleDeleteScan}
               onNavigateScanner={() => setActiveTab('scanner')}
@@ -188,7 +197,7 @@ export default function App() {
 
           {activeTab === 'sandbox' && (
             <CodeSandboxView
-              onScanComplete={handleScanComplete}
+              onScanComplete={scan => handleScanComplete(scan, { navigate: false })}
               onNavigateReviewer={handleSelectFindingForReview}
             />
           )}
