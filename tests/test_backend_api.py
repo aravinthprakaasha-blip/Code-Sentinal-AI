@@ -11,7 +11,8 @@ from backend import repository, storage
 from backend.ai_review import _redact_source
 from backend.analyzer import _safe_path, analyze_files
 from backend.auth import get_current_user
-from backend.repository import fetch_repository_files, parse_github_url
+from backend.repository import fetch_repository, parse_github_url, parse_github_url_with_branch
+from tests.github_fake import FakeGitHub, FakeRepo
 
 client = TestClient(main.app)
 
@@ -97,16 +98,22 @@ def test_authenticated_analysis_is_stored_under_verified_uid() -> None:
         main.app.dependency_overrides.clear()
 
 
-def test_analysis_rejects_non_python_uploads_instead_of_reporting_empty_scan() -> None:
+def test_non_python_uploads_are_scanned_and_unsupported_files_are_reported() -> None:
     result = analyze_files(
-        [{"path": "src/app.js", "content": "console.log('not python')"}],
+        [
+            {"path": "src/app.js", "content": "console.log('ok')"},
+            {"path": "src/App.kt", "content": "fun main() {}"},
+        ],
         "local://upload",
         "upload",
         "local",
+        dependency_scan=False,
     )
 
-    assert result["files"] == []
-    assert result["warnings"] == ["Skipped non-Python file: src/app.js"]
+    assert result["files"] == ["src/app.js"]
+    assert result["coverage"]["code_files_scanned"] == 1
+    assert result["coverage"]["unsupported_languages"] == {"Kotlin": 1}
+    assert result["coverage"]["coverage_status"] == "partial"
     assert result["risk_model"].startswith("transparent-rule-based")
 
 
@@ -121,7 +128,8 @@ def test_syntax_error_is_parse_time_finding_and_does_not_run_bandit_on_invalid_f
 
     assert result["findings"][0]["rule_id"] == "PY-SYNTAX"
     assert "parse-time error" in result["findings"][0]["description"]
-    run_bandit.assert_called_once_with([])
+    run_bandit.assert_not_called()
+    assert result["coverage"]["analysis_failures"][0]["path"] == "bad.py"
 
 
 def test_bandit_reports_actual_unsafe_subprocess_call() -> None:
@@ -179,16 +187,24 @@ def test_large_finding_sets_are_capped_and_report_total_counts() -> None:
     assert len(result["findings"]) == 250
     assert result["findings_truncated"] is True
     assert result["source_counts"]["bug"] >= 300
+    severities = [finding["severity"] for finding in result["findings"]]
+    assert severities == sorted(severities, key=["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFORMATIONAL"].index)
     assert any("highest-severity findings" in warning for warning in result["warnings"])
 
 
 def test_github_url_parser_rejects_other_hosts_and_deep_links() -> None:
     assert parse_github_url("https://github.com/owner/repo.git") == ("owner", "repo")
+    assert parse_github_url_with_branch("https://github.com/owner/repo/tree/feature/x") == ("owner", "repo", "feature/x")
     for url in (
         "http://github.com/owner/repo",
         "https://evil.example/owner/repo",
-        "https://github.com/owner/repo/tree/main",
+        "https://github.com.evil.example/owner/repo",
+        "https://user:pass@github.com/owner/repo",
+        "https://github.com/owner/repo/blob/main/app.py",
+        "https://github.com/owner/repo/tree/..%2F..%2Fx",
         "https://github.com/owner/../private",
+        "https://github.com/owner",
+        "not a url",
     ):
         try:
             parse_github_url(url)
@@ -229,43 +245,35 @@ def test_gemini_provider_failure_returns_an_explicit_unavailable_result() -> Non
     assert review["repository_review"] is None
 
 
-def test_github_repository_extraction_filters_to_python_and_skips_vendor_folders() -> None:
-    source_files = {
-        "https://raw.githubusercontent.com/example/project/main/src/app.py": "print('safe')\n",
-        "https://raw.githubusercontent.com/example/project/main/docs/stub.pyi": "def api() -> None: ...\n",
-    }
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "api.github.com" and request.url.path == "/repos/example/project":
-            return httpx.Response(200, json={"default_branch": "main"})
-        if request.url.host == "api.github.com":
-            return httpx.Response(
-                200,
-                json={
-                    "truncated": False,
-                    "tree": [
-                        {"type": "blob", "path": "src/app.py", "size": len(source_files[next(iter(source_files))])},
-                        {"type": "blob", "path": "docs/stub.pyi", "size": len(source_files[list(source_files)[1]])},
-                        {"type": "blob", "path": "node_modules/package/install.py", "size": 20},
-                        {"type": "blob", "path": "src/app.ts", "size": 20},
-                    ],
-                },
-            )
-        return httpx.Response(200, content=source_files[str(request.url)])
-
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    with patch.object(repository.httpx, "Client", return_value=client):
-        _, branch, files, languages, counts = fetch_repository_files(
-            "https://github.com/example/project",
-            None,
-            main.settings,
+def test_github_repository_extraction_selects_supported_files_and_skips_vendor_folders() -> None:
+    fake = FakeGitHub(
+        FakeRepo(
+            "example",
+            "project",
+            {
+                "main": {
+                    "src/app.py": b"print('safe')\n",
+                    "docs/stub.pyi": b"def api() -> None: ...\n",
+                    "node_modules/package/install.py": b"print('vendored')\n",
+                    "src/app.ts": b"export const x = 1;\n",
+                    "logo.png": b"\x89PNG\r\n",
+                    "README.md": b"# readme\n",
+                }
+            },
         )
+    )
+    real_client = httpx.Client
+    with patch.object(repository.httpx, "Client", lambda **kw: real_client(transport=fake.transport(), timeout=kw.get("timeout"))):
+        snapshot = fetch_repository("https://github.com/example/project", None, main.settings)
 
-    assert branch == "main"
-    assert {item["path"] for item in files} == {"src/app.py", "docs/stub.pyi"}
-    assert languages == ["Python", "TypeScript"]
-    assert counts["python_files"] == 2
-    assert all(item["content"] for item in files)
+    assert snapshot.branch == "main"
+    assert len(snapshot.commit_sha) == 40
+    assert {item["path"] for item in snapshot.files} == {"src/app.py", "docs/stub.pyi", "src/app.ts"}
+    assert snapshot.languages == ["Python", "TypeScript"]
+    assert snapshot.skipped["vendor_or_generated"] == 1
+    assert snapshot.skipped["binary_or_media"] == 1
+    assert snapshot.skipped["documentation_or_other"] == 1
+    assert all(item["content"] for item in snapshot.files)
 
 
 def test_unsafe_windows_paths_are_rejected() -> None:

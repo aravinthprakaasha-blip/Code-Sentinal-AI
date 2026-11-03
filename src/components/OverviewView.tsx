@@ -17,12 +17,32 @@ import {
   ExternalLink,
   Info,
   Code2,
+  ShieldCheck,
+  Layers,
+  Bot,
 } from 'lucide-react';
 import { ScanResult } from '../types';
+
+const SKIP_REASON_LABELS: Record<string, string> = {
+  vendor_or_generated: 'Dependency / build / generated',
+  binary_or_media: 'Binary or media',
+  unsupported_type: 'Unsupported language',
+  oversized: 'Over size limit',
+  not_utf8: 'Not UTF-8 text',
+  limit_exceeded: 'Scan limits / download failures',
+  documentation_or_other: 'Docs and other non-code files',
+};
+
+const VERDICT_LABELS: Record<string, string> = {
+  likely_true_positive: 'Likely real',
+  needs_manual_verification: 'Needs manual verification',
+  likely_false_positive: 'Possibly a false positive',
+};
 
 interface OverviewViewProps {
   currentScan: ScanResult | null;
   savedScans: any[];
+  historyError?: string | null;
   onSelectSavedScan: (scan: any) => void;
   onDeleteScan: (scanId: string) => void;
   onNavigateScanner: () => void;
@@ -32,11 +52,67 @@ interface OverviewViewProps {
 export const OverviewView: React.FC<OverviewViewProps> = ({
   currentScan,
   savedScans,
+  historyError,
   onSelectSavedScan,
   onDeleteScan,
   onNavigateScanner,
   onNavigateSandbox,
 }) => {
+  const historySection = (
+    <>
+      {historyError && (
+        <div className="max-w-4xl mx-auto p-3 rounded-xl bg-rose-950/40 border border-rose-800/70 text-xs text-rose-200" role="alert">
+          {historyError}
+        </div>
+      )}
+        {/* Saved Scans from Firestore */}
+        {savedScans.length > 0 && (
+          <div className="max-w-4xl mx-auto space-y-3">
+            <div className="flex items-center space-x-2 text-slate-300 font-semibold text-sm">
+              <History className="w-4 h-4 text-cyan-400" />
+              <span>Your Private Analysis History</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {savedScans.map((s) => (
+                <div
+                  key={s.id}
+                  className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between hover:border-slate-700 transition-all"
+                >
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold text-slate-200 truncate max-w-[200px]">{s.repo_name}</p>
+                    <p className="text-[10px] text-slate-500 font-mono">{s.branch} · risk {s.risk_score} ({s.risk_label}){s.coverage_status && s.coverage_status !== 'complete' ? ` · ${s.coverage_status} coverage` : ''}</p>
+                    <p className="text-[10px] text-slate-400">{new Date(s.created_at).toLocaleString()}</p>
+                    <div className="flex items-center space-x-2 text-[10px]">
+                      <span className="text-slate-400">{s.file_count} files</span>
+                      <span className="text-slate-500">•</span>
+                      <span className="text-rose-400">{s.findings_count} findings</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => onSelectSavedScan(s)}
+                      className="px-3 py-1.5 rounded-lg bg-cyan-950 text-cyan-300 border border-cyan-800 text-xs font-medium hover:bg-cyan-900 transition-all cursor-pointer"
+                    >
+                      View
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`Delete the saved analysis of ${s.repo_name}? This cannot be undone.`)) onDeleteScan(s.id);
+                      }}
+                      aria-label={`Delete analysis of ${s.repo_name}`}
+                      className="p-1.5 text-slate-500 hover:text-rose-400 rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+    </>
+  );
+
   if (!currentScan) {
     return (
       <div className="space-y-6">
@@ -47,7 +123,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </div>
           <h2 className="text-xl font-bold text-slate-100 tracking-tight">No Active Repository Scanned</h2>
           <p className="text-sm text-slate-400 mt-2 max-w-md mx-auto leading-relaxed">
-          Welcome to CodeSentry AI. Run server-side Python AST, Pyflakes, and Bandit analysis on a public GitHub repository or uploaded Python source.
+          Welcome to CodeSentry AI. Scan a GitHub repository or uploaded files for bugs, vulnerabilities, committed secrets and vulnerable dependencies, with an AI explanation of the most important findings.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3 mt-6">
             <button
@@ -69,53 +145,19 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </div>
         </div>
 
-        {/* Saved Scans from Firestore */}
-        {savedScans.length > 0 && (
-          <div className="max-w-4xl mx-auto space-y-3">
-            <div className="flex items-center space-x-2 text-slate-300 font-semibold text-sm">
-              <History className="w-4 h-4 text-cyan-400" />
-              <span>Saved Scan History (Cloud Firestore)</span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {savedScans.map((s) => (
-                <div
-                  key={s.id}
-                  className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between hover:border-slate-700 transition-all"
-                >
-                  <div className="space-y-1">
-                    <p className="text-xs font-semibold text-slate-200 truncate max-w-[200px]">{s.repo_name}</p>
-                    <p className="text-[10px] text-slate-400">{new Date(s.created_at).toLocaleString()}</p>
-                    <div className="flex items-center space-x-2 text-[10px]">
-                      <span className="text-slate-400">{s.file_count} files</span>
-                      <span className="text-slate-500">•</span>
-                      <span className="text-rose-400">{s.findings_count} findings</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => onSelectSavedScan(s)}
-                      className="px-3 py-1.5 rounded-lg bg-cyan-950 text-cyan-300 border border-cyan-800 text-xs font-medium hover:bg-cyan-900 transition-all cursor-pointer"
-                    >
-                      View
-                    </button>
-                    <button
-                      onClick={() => onDeleteScan(s.id)}
-                      className="p-1.5 text-slate-500 hover:text-rose-400 rounded-lg transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {historySection}
       </div>
     );
   }
 
   const bugCount = currentScan.source_counts?.bug ?? currentScan.findings.filter(f => f.source === 'bug').length;
-  const secCount = currentScan.source_counts?.security ?? currentScan.findings.filter(f => f.source === 'security').length;
+  const secCount = (currentScan.source_counts?.security ?? currentScan.findings.filter(f => f.source === 'security').length)
+    + (currentScan.source_counts?.dependency ?? currentScan.findings.filter(f => f.source === 'dependency').length);
+  const coverage = currentScan.coverage;
+  const status = currentScan.security_status;
+  const ai = currentScan.ai_review;
+  const coveragePercent = coverage ? Math.round(coverage.coverage_ratio * 100) : null;
+  const findingById = new Map(currentScan.findings.map(f => [f.id, f]));
   const qualCount = currentScan.source_counts?.quality ?? currentScan.findings.filter(f => f.source === 'quality').length;
   const highCount = currentScan.severity_counts?.HIGH ?? currentScan.findings.filter(f => f.severity === 'HIGH').length;
   const medCount = currentScan.severity_counts?.MEDIUM ?? currentScan.findings.filter(f => f.severity === 'MEDIUM').length;
@@ -170,15 +212,52 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
         </div>
       </div>
 
+      {/* Security status */}
+      {status && (
+        <div
+          className={`p-4 rounded-2xl border flex items-start gap-3 ${
+            status.code === 'NO_ISSUES_DETECTED'
+              ? 'bg-emerald-950/30 border-emerald-900/70'
+              : status.code === 'NOT_ANALYZED'
+              ? 'bg-slate-900/80 border-slate-700'
+              : status.code.startsWith('CRITICAL') || status.code.startsWith('HIGH')
+              ? 'bg-rose-950/30 border-rose-900/70'
+              : 'bg-amber-950/30 border-amber-900/70'
+          }`}
+          role="status"
+        >
+          {status.code === 'NO_ISSUES_DETECTED' ? (
+            <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+          ) : (
+            <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+          )}
+          <div>
+            <p className="text-sm font-semibold text-slate-100">Security status: {status.label}</p>
+            <p className="text-xs text-slate-400 mt-1 leading-relaxed">{status.message}</p>
+          </div>
+        </div>
+      )}
+
+      {currentScan.warnings.length > 0 && (
+        <details className="p-3 rounded-xl bg-amber-950/20 border border-amber-900/50 text-xs text-amber-200">
+          <summary className="cursor-pointer font-medium">{currentScan.warnings.length} warning(s) about this scan</summary>
+          <ul className="mt-2 space-y-1 list-disc pl-5 text-amber-100/90">
+            {currentScan.warnings.map((warning, index) => <li key={index}>{warning}</li>)}
+          </ul>
+        </details>
+      )}
+
       {/* Top Stat Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-1">
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs">Analyzed Files</span>
+            <span className="text-xs">Files Scanned</span>
             <FileCode className="w-4 h-4 text-cyan-400" />
           </div>
-          <p className="text-2xl font-bold text-slate-100 font-mono">{currentScan.files.length}</p>
-          <span className="text-[10px] text-slate-400">Python Files Analyzed</span>
+          <p className="text-2xl font-bold text-slate-100 font-mono">{coverage?.files_scanned ?? currentScan.files.length}</p>
+          <span className="text-[10px] text-slate-400">
+            {coverage ? `${coverage.files_skipped} skipped of ${coverage.repository_files} total` : 'Source files analyzed'}
+          </span>
         </div>
 
         {currentScan.findings_truncated && (
@@ -189,11 +268,11 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
         <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-1">
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs">AST Bug Candidates</span>
+            <span className="text-xs">Bug Findings</span>
             <Bug className="w-4 h-4 text-amber-400" />
           </div>
           <p className="text-2xl font-bold text-amber-400 font-mono">{bugCount}</p>
-          <span className="text-[10px] text-slate-400">AST and Pyflakes checks</span>
+          <span className="text-[10px] text-slate-400">Parser, AST and Pyflakes ({qualCount} quality notes)</span>
         </div>
 
         <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-1">
@@ -202,7 +281,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             <ShieldAlert className="w-4 h-4 text-rose-400" />
           </div>
           <p className="text-2xl font-bold text-rose-400 font-mono">{secCount}</p>
-          <span className="text-[10px] text-slate-400">Bandit scanner findings</span>
+          <span className="text-[10px] text-slate-400">Bandit, rules, secrets, dependencies</span>
         </div>
 
         <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-1">
@@ -223,7 +302,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             {currentScan.risk_score}
             <span className="text-xs text-slate-400 font-normal ml-1">({riskLabel})</span>
           </p>
-          <span className="text-[10px] text-slate-400">Composite heuristic</span>
+          <span className="text-[10px] text-slate-400">Transparent rule-based score</span>
         </div>
       </div>
 
@@ -234,7 +313,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-300">
               Repository Programming Languages ({Object.keys(currentScan.languages_detected).length} Detected)
             </span>
-            <span className="text-xs text-cyan-400 font-mono">Python files analyzed</span>
+            <span className="text-xs text-cyan-400 font-mono">share of scanned lines</span>
           </div>
 
           {/* Polyglot colored bar */}
@@ -277,6 +356,131 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* Coverage */}
+      {coverage && (
+        <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-cyan-400" /> Analysis Coverage
+            </span>
+            <span
+              className={`text-xs font-mono px-2 py-0.5 rounded border ${
+                coverage.coverage_status === 'complete'
+                  ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                  : 'bg-amber-950 text-amber-300 border-amber-800'
+              }`}
+            >
+              {coverage.coverage_status} · {coveragePercent}% of analyzable files fully scanned
+            </span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+            <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+              <p className="text-slate-400">Source files</p>
+              <p className="text-lg font-mono text-slate-100">{coverage.code_files_scanned}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+              <p className="text-slate-400">Config / manifests</p>
+              <p className="text-lg font-mono text-slate-100">{coverage.config_files_scanned}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+              <p className="text-slate-400">Skipped</p>
+              <p className="text-lg font-mono text-slate-100">{coverage.files_skipped}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+              <p className="text-slate-400">Analysis failures</p>
+              <p className={`text-lg font-mono ${coverage.analysis_failures.length ? 'text-rose-300' : 'text-slate-100'}`}>{coverage.analysis_failures.length}</p>
+            </div>
+          </div>
+          <div className="grid md:grid-cols-2 gap-4 text-[11px]">
+            <div className="space-y-1.5">
+              <p className="text-slate-300 font-semibold">Analyzers per language</p>
+              {Object.entries(coverage.languages).map(([language, info]) => (
+                <p key={language} className="text-slate-400">
+                  <span className="text-slate-200 font-medium">{language}</span> ({info.files}): {info.analyzers.join(', ')}
+                </p>
+              ))}
+              <p className="text-slate-400">
+                <span className="text-slate-200 font-medium">Dependencies</span>: {coverage.dependency_scan.status === 'completed'
+                  ? `${coverage.dependency_scan.packages_checked} pinned package(s) checked against OSV.dev`
+                  : coverage.dependency_scan.status === 'not_applicable'
+                  ? 'no supported manifest found'
+                  : `check ${coverage.dependency_scan.status}`}
+                {coverage.dependency_scan.unpinned_dependencies > 0 && ` · ${coverage.dependency_scan.unpinned_dependencies} unpinned (not checked)`}
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-slate-300 font-semibold">Not scanned</p>
+              {Object.entries(coverage.skipped).filter(([, count]) => count > 0).map(([reason, count]) => (
+                <p key={reason} className="text-slate-400">{SKIP_REASON_LABELS[reason] || reason}: <span className="font-mono text-slate-200">{count}</span></p>
+              ))}
+              {Object.keys(coverage.unsupported_languages).length > 0 && (
+                <p className="text-amber-300">Unsupported languages: {Object.entries(coverage.unsupported_languages).map(([l, c]) => `${l} (${c})`).join(', ')}</p>
+              )}
+              {coverage.analysis_failures.map((failure, index) => (
+                <p key={index} className="text-rose-300 font-mono break-all">{failure.path}: {failure.reason}</p>
+              ))}
+              {coverage.skipped_examples.length > 0 && (
+                <details>
+                  <summary className="cursor-pointer text-cyan-400">Examples of skipped files</summary>
+                  <ul className="mt-1 space-y-0.5 max-h-40 overflow-y-auto">
+                    {coverage.skipped_examples.map(item => (
+                      <li key={item.path} className="font-mono text-slate-500 break-all">{item.path} — {item.reason}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI review */}
+      {ai && ai.status !== 'not_requested' && (
+        <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+              <Bot className="w-4 h-4 text-cyan-400" /> AI Code Review (Gemini)
+            </span>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800">
+              AI-generated suggestions — not verified fixes
+            </span>
+          </div>
+          {ai.status === 'available' ? (
+            <>
+              {ai.repository_review && <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">{ai.repository_review}</p>}
+              <div className="space-y-2">
+                {Object.values(ai.findings || {}).map(review => {
+                  const finding = findingById.get(review.finding_id);
+                  return (
+                    <div key={review.finding_id} className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 text-xs space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-slate-400">{review.rule_id}</span>
+                        {finding && <span className="text-slate-200 font-medium">{finding.title}</span>}
+                        {finding && <span className="font-mono text-slate-500">{finding.file_path}:{finding.line_start}</span>}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                          review.verdict === 'likely_true_positive'
+                            ? 'bg-rose-950 text-rose-300 border-rose-800'
+                            : review.verdict === 'likely_false_positive'
+                            ? 'bg-slate-800 text-slate-300 border-slate-700'
+                            : 'bg-amber-950 text-amber-300 border-amber-800'
+                        }`}>{VERDICT_LABELS[review.verdict] || review.verdict}</span>
+                      </div>
+                      <p className="text-slate-300 leading-relaxed">{review.explanation}</p>
+                      {review.recommended_fix && <p className="text-slate-400"><span className="text-slate-300 font-semibold">Suggested fix: </span>{review.recommended_fix}</p>}
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-slate-500">
+                Reviewed {ai.reviewed_finding_count ?? 0} of the {ai.requested_finding_count ?? 0} most severe findings{ai.model ? ` with ${ai.model}` : ''}. Open a finding in the Security or Bugs view for the full explanation and corrected code.
+              </p>
+            </>
+          ) : (
+            <p className="text-xs text-amber-200">AI review unavailable: {(ai.reason || 'unknown reason').replace(/\.$/, '')}. Static analysis results above are unaffected.</p>
+          )}
         </div>
       )}
 
@@ -331,9 +535,17 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
           <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800/80 text-[11px] text-slate-400 flex items-start space-x-2">
             <Info className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
-            <p>
-              Project-specific rule-based score computed from static findings and metrics. Not a certified safety rating.
-            </p>
+            <div>
+              <p>
+                Transparent rule-based score from the findings above{coverage && coverage.coverage_status !== 'complete' ? ', covering only the files that were scanned' : ''}. Not a certified safety rating.
+              </p>
+              {currentScan.risk_explanation && (
+                <details className="mt-1">
+                  <summary className="cursor-pointer text-cyan-400">How is this calculated?</summary>
+                  <p className="mt-1 leading-relaxed">{currentScan.risk_explanation}</p>
+                </details>
+              )}
+            </div>
           </div>
         </div>
 
@@ -357,6 +569,16 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
             <div>
               <div className="flex justify-between text-xs mb-1">
+                <span className="text-slate-300 font-medium">Vulnerable dependencies</span>
+                <span className="font-mono text-orange-400 font-semibold">{currentScan.risk_breakdown?.dependencies || 0}/100</span>
+              </div>
+              <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+                <div className="h-full bg-orange-500 rounded-full" style={{ width: `${currentScan.risk_breakdown?.dependencies || 0}%` }} />
+              </div>
+            </div>
+
+            <div>
+              <div className="flex justify-between text-xs mb-1">
                 <span className="text-slate-300 font-medium">Bug findings</span>
                 <span className="font-mono text-amber-400 font-semibold">{currentScan.risk_breakdown?.bugs || 0}/100</span>
               </div>
@@ -367,7 +589,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
             <div>
               <div className="flex justify-between text-xs mb-1">
-                <span className="text-slate-300 font-medium">Cyclomatic complexity and nested loops</span>
+                <span className="text-slate-300 font-medium">Code quality findings (complexity, unused code)</span>
                 <span className="font-mono text-blue-400 font-semibold">{currentScan.risk_breakdown?.complexity || 0}/100</span>
               </div>
               <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
@@ -387,14 +609,12 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </div>
 
           {/* Severity Badges Summary */}
-          <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs">
+          <div className="pt-4 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs">
             <span className="text-slate-400">Severity Distribution:</span>
-            <div className="flex items-center space-x-2">
-              {criticalCount > 0 && (
-                <span className="px-2 py-0.5 rounded bg-red-950 text-red-200 border border-red-800 font-mono font-medium">
-                  {criticalCount} CRITICAL
-                </span>
-              )}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2 py-0.5 rounded bg-red-950 text-red-200 border border-red-800 font-mono font-medium">
+                {criticalCount} CRITICAL
+              </span>
               <span className="px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 font-mono font-medium">
                 {highCount} HIGH
               </span>
@@ -413,6 +633,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </div>
         </div>
       </div>
+      {historySection}
     </div>
   );
 };

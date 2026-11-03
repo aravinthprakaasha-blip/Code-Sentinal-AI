@@ -104,12 +104,59 @@ def get_current_user(
     except HTTPException:
         raise
 
+    except auth.ExpiredIdTokenError as exc:
+        raise HTTPException(
+            status_code=401,
+            detail="Your sign-in session has expired. Please sign in again.",
+        ) from exc
+
+    except auth.RevokedIdTokenError as exc:
+        raise HTTPException(
+            status_code=401,
+            detail="Your sign-in session was revoked. Please sign in again.",
+        ) from exc
+
+    except auth.UserDisabledError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail="This account has been disabled.",
+        ) from exc
+
+    except auth.CertificateFetchError as exc:
+        logger.warning("Could not fetch Firebase token-signing certificates")
+        raise HTTPException(
+            status_code=503,
+            detail="The API server could not reach Firebase to verify your sign-in. Try again shortly.",
+        ) from exc
+
+    except ValueError as exc:
+        if "project id is required" in str(exc).lower():
+            logger.error("Firebase project ID is not configured on the API server")
+            raise HTTPException(
+                status_code=503,
+                detail="Firebase authentication is not configured on the API server (set FIREBASE_PROJECT_ID and FIREBASE_SERVICE_ACCOUNT_JSON).",
+            ) from exc
+        logger.info("Firebase ID token verification failed: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=401,
+            detail="Firebase ID token is invalid or expired.",
+        ) from exc
+
     except Exception as exc:
+        message = str(exc).lower()
         logger.info(
             "Firebase ID token verification failed: %s",
             type(exc).__name__,
         )
-
+        if "audience" in message or "\"aud\"" in message or "issuer" in message:
+            # Typical misconfiguration: the frontend and backend use different Firebase projects.
+            raise HTTPException(
+                status_code=401,
+                detail=(
+                    "The sign-in token was issued for a different Firebase project than the API "
+                    "server uses. Make sure VITE_FIREBASE_PROJECT_ID and FIREBASE_PROJECT_ID match."
+                ),
+            ) from exc
         raise HTTPException(
             status_code=401,
             detail="Firebase ID token is invalid or expired.",

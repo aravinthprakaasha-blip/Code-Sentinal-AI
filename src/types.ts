@@ -5,7 +5,7 @@
 
 export type SeverityLevel = 'INFORMATIONAL' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 export type ConfidenceLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'N/A';
-export type FindingSource = 'bug' | 'security' | 'quality';
+export type FindingSource = 'bug' | 'security' | 'quality' | 'dependency';
 export type RiskLabel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
 export interface Finding {
@@ -24,6 +24,60 @@ export interface Finding {
   suggested_fix: string;
   is_heuristic: boolean;
   snippet?: string;
+  /** Redacted lines around the finding, used for AI review. */
+  context?: string;
+  /** Vulnerability category, e.g. "SQL Injection". */
+  category?: string;
+  /** Analyzer that produced the finding, e.g. "Bandit" or "CodeSentry rules". */
+  analyzer?: string;
+  references?: string[];
+}
+
+export type AIVerdict = 'likely_true_positive' | 'needs_manual_verification' | 'likely_false_positive';
+
+export interface AIFindingReview {
+  finding_id: string;
+  rule_id: string;
+  verdict: AIVerdict;
+  explanation: string;
+  why_problem: string;
+  impact: string;
+  recommended_fix: string;
+  corrected_code: string;
+  ai_generated: true;
+  disclaimer: string;
+}
+
+export interface CoverageReport {
+  repository_files: number;
+  files_scanned: number;
+  code_files_scanned: number;
+  config_files_scanned: number;
+  dependency_manifests: number;
+  files_skipped: number;
+  skipped: Record<string, number>;
+  skipped_examples: { path: string; reason: string }[];
+  unsupported_languages: Record<string, number>;
+  analysis_failures: { path: string; reason: string }[];
+  bandit_status: string;
+  dependency_scan: {
+    status: 'not_applicable' | 'disabled' | 'completed' | 'partial' | 'unavailable';
+    manifests: string[];
+    packages_checked: number;
+    unpinned_dependencies: number;
+    vulnerable_packages: number;
+    parse_errors: string[];
+    source: string;
+  };
+  coverage_ratio: number;
+  coverage_status: 'complete' | 'partial' | 'minimal' | 'none';
+  languages: Record<string, { files: number; loc: number; analyzers: string[] }>;
+}
+
+export interface SecurityStatus {
+  code: string;
+  label: string;
+  message: string;
 }
 
 export interface FileMetrics {
@@ -57,6 +111,8 @@ export interface AIReview {
   change_explanation: string;
   prevention: string;
   disclaimer: string;
+  verdict?: AIVerdict;
+  ai_generated?: boolean;
   isValidSyntax?: boolean;
 }
 
@@ -87,14 +143,30 @@ export interface ScanResult {
   ai_review?: {
     status: 'available' | 'unavailable' | 'not_requested';
     reason?: string | null;
+    error_code?: string | null;
+    model?: string;
     recommendations?: Array<{
       rule_id: string;
+      finding_id?: string;
       explanation: string;
       suggested_code: string;
       best_practice: string;
+      verdict?: AIVerdict;
     }>;
+    findings?: Record<string, AIFindingReview>;
     repository_review?: string | null;
+    reviewed_finding_count?: number;
+    requested_finding_count?: number;
+    disclaimer?: string;
   };
+  coverage?: CoverageReport;
+  security_status?: SecurityStatus;
+  risk_explanation?: string;
+  risk_points?: number;
+  category_counts?: Record<string, number>;
+  saved_to_history?: boolean;
+  storage_truncated?: boolean;
+  repository_private?: boolean;
   file_count?: number;
   python_file_count?: number;
   repository_file_count?: number;
@@ -107,6 +179,7 @@ export interface ScanResult {
   source_counts?: Record<string, number>;
   risk_breakdown: {
     security: number;
+    dependencies?: number;
     bugs: number;
     complexity: number;
     quality: number;

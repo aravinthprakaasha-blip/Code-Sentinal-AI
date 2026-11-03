@@ -1,176 +1,165 @@
 /**
  * @file src/components/SettingsView.tsx
- * Settings and preferences management backed by Cloud Firestore.
+ * Live backend status and the limits the server actually enforces.
+ *
+ * Scan limits and the Gemini model are server-side settings (environment
+ * variables on the backend), so they are shown here read-only rather than as
+ * controls that would have no effect.
  */
 
-import React, { useState, useEffect } from 'react';
-import { Settings, Database, Key, Sliders, ShieldCheck, Save, Check } from 'lucide-react';
-import { UserPreference, UserProfile } from '../types';
-import { getUserPreferences, saveUserPreferences } from '../services/firestoreService';
+import React, { useEffect, useState } from 'react';
+import { Settings, Database, Sliders, ShieldCheck, RefreshCw, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
+import { UserProfile } from '../types';
+import { BackendHealth, getBackendHealth } from '../services/apiService';
+import { firebaseProjectId } from '../firebase';
 
 interface SettingsViewProps {
   currentUser: UserProfile | null;
 }
 
+const StatusRow: React.FC<{ label: string; ok: boolean; detail?: string }> = ({ label, ok, detail }) => (
+  <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 flex items-start gap-2">
+    {ok ? <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" /> : <XCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />}
+    <div>
+      <span className="block text-slate-200 text-xs font-medium">{label}</span>
+      <span className="block text-[11px] text-slate-400">{detail || (ok ? 'Configured' : 'Not configured')}</span>
+    </div>
+  </div>
+);
+
 export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
-  const [model, setModel] = useState('models/gemini-2.5-flash');
-  const [maxFileSizeKb, setMaxFileSizeKb] = useState(250);
-  const [maxScanTimeSec, setMaxScanTimeSec] = useState(60);
-  const [isSaving, setIsSaving] = useState(false);
-  const [savedSuccess, setSavedSuccess] = useState(false);
+  const [health, setHealth] = useState<BackendHealth | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (!currentUser) return;
-    const load = async () => {
-      try {
-        const prefs = await getUserPreferences(currentUser.uid);
-        if (prefs) {
-          setModel(prefs.geminiModel || 'models/gemini-2.5-flash');
-          setMaxFileSizeKb(prefs.maxFileSizeKb || 250);
-          setMaxScanTimeSec(prefs.maxScanTimeSec || 60);
-        }
-      } catch (err) {
-        console.error('Failed to load preferences:', err);
-      }
-    };
-    load();
-  }, [currentUser]);
-
-  const handleSave = async () => {
-    if (!currentUser) return;
-    setIsSaving(true);
+  const load = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      await saveUserPreferences(currentUser.uid, {
-        geminiModel: model,
-        maxFileSizeKb,
-        maxScanTimeSec,
-      });
-      setSavedSuccess(true);
-      setTimeout(() => setSavedSuccess(false), 2500);
+      setHealth(await getBackendHealth());
     } catch (err) {
-      console.error('Failed to save preferences:', err);
+      setHealth(null);
+      setError(err instanceof Error ? err.message : 'The backend could not be reached.');
     } finally {
-      setIsSaving(false);
+      setLoading(false);
     }
   };
 
+  useEffect(() => {
+    load();
+  }, []);
+
+  const config = health?.configuration;
+  const limits = health?.limits || {};
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
-      <div>
-        <h1 className="text-xl font-bold text-slate-100 flex items-center space-x-2">
-          <Settings className="w-5 h-5 text-cyan-400" />
-          <span>Scanner & AI Settings</span>
-        </h1>
-        <p className="text-xs text-slate-400 mt-1">
-          Configure analysis engine bounds, LLM remediation models, and Firebase cloud persistence.
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-slate-100 flex items-center space-x-2">
+            <Settings className="w-5 h-5 text-cyan-400" />
+            <span>System Status & Limits</span>
+          </h1>
+          <p className="text-xs text-slate-400 mt-1">
+            Live status reported by the CodeSentry API. Scan limits and the AI model are configured on the server.
+          </p>
+        </div>
+        <button
+          onClick={load}
+          disabled={loading}
+          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          <span>Refresh</span>
+        </button>
+      </div>
+
+      <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center space-x-2.5">
+            <Database className="w-5 h-5 text-cyan-400" />
+            <h2 className="text-sm font-semibold text-slate-200">Backend API</h2>
+          </div>
+          {health ? (
+            <span className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 text-[11px] font-mono font-medium">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Reachable · v{health.version}</span>
+            </span>
+          ) : (
+            <span className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-rose-950 text-rose-300 border border-rose-800 text-[11px] font-mono font-medium">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>{loading ? 'Checking…' : 'Unreachable'}</span>
+            </span>
+          )}
+        </div>
+
+        {error && <p className="text-xs text-rose-300" role="alert">{error}</p>}
+
+        {config && (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+              <StatusRow label="Firebase Admin (auth & history)" ok={config.firebase_auth} />
+              <StatusRow
+                label="Gemini AI review"
+                ok={config.gemini}
+                detail={config.gemini ? `Model: ${config.gemini_model}` : 'GEMINI_API_KEY not set — AI review disabled'}
+              />
+              <StatusRow
+                label="GitHub API token"
+                ok={config.github_token}
+                detail={config.github_token ? 'Higher GitHub rate limit for public repos' : 'Optional — anonymous limit is 60 requests/hour'}
+              />
+              <StatusRow label="Dependency checks (OSV.dev)" ok={config.dependency_scan} detail={config.dependency_scan ? 'Enabled' : 'Disabled on this server'} />
+              <StatusRow label="Bandit (Python security)" ok={config.bandit} />
+              <StatusRow label="Pyflakes (Python bugs)" ok={config.pyflakes} />
+            </div>
+            <p className="text-[11px] text-slate-500">{health?.note}</p>
+          </>
+        )}
+      </div>
+
+      <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4">
+        <div className="flex items-center space-x-2.5">
+          <Sliders className="w-5 h-5 text-cyan-400" />
+          <h2 className="text-sm font-semibold text-slate-200">Scan Limits (enforced by the server)</h2>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+          {[
+            ['Files per repository', limits.max_repository_files],
+            ['Max file size', limits.max_source_file_kb !== undefined ? `${limits.max_source_file_kb} KB` : undefined],
+            ['Max repository size', limits.max_repository_mb !== undefined ? `${limits.max_repository_mb} MB` : undefined],
+            ['Retrieval time limit', limits.repository_timeout_seconds !== undefined ? `${limits.repository_timeout_seconds} s` : undefined],
+            ['Scans per minute', limits.analysis_requests_per_minute],
+            ['AI requests per minute', limits.ai_requests_per_minute],
+          ].map(([label, value]) => (
+            <div key={label as string} className="p-3 bg-slate-950/60 rounded-xl border border-slate-800">
+              <span className="text-slate-500 block text-[10px] uppercase">{label}</span>
+              <span className="font-mono text-slate-200">{value ?? '—'}</span>
+            </div>
+          ))}
+        </div>
+        <p className="text-[11px] text-slate-500">
+          Files beyond these limits are reported as skipped in each scan's coverage report. Administrators change them with
+          backend environment variables (see README).
         </p>
       </div>
 
-      {/* Cloud Firestore & Auth Status Card */}
-      <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
-            <Database className="w-5 h-5 text-cyan-400" />
-            <h2 className="text-sm font-semibold text-slate-200">Firebase Cloud Infrastructure</h2>
-          </div>
-          <span className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 text-[11px] font-mono font-medium">
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Online & Connected</span>
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+      <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3 text-xs">
+        <h2 className="text-sm font-semibold text-slate-200">Account</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800">
-            <span className="text-slate-500 block text-[10px] uppercase">GCP Project</span>
-            <span className="font-mono text-slate-300">gen-lang-client-0114039202</span>
+            <span className="text-slate-500 block text-[10px] uppercase">Signed in as</span>
+            <span className="font-mono text-slate-300 break-all">{currentUser?.email || '—'}</span>
           </div>
           <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800">
-            <span className="text-slate-500 block text-[10px] uppercase">Authentication</span>
-            <span className="font-mono text-cyan-300">Google Sign-In Popup</span>
+            <span className="text-slate-500 block text-[10px] uppercase">Firebase project</span>
+            <span className="font-mono text-slate-300 break-all">{firebaseProjectId || 'not configured'}</span>
           </div>
           <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800">
-            <span className="text-slate-500 block text-[10px] uppercase">Security Rules</span>
-            <span className="font-mono text-emerald-400">ABAC Strict Ownership</span>
+            <span className="text-slate-500 block text-[10px] uppercase">History privacy</span>
+            <span className="text-slate-300">Stored per account; only you can read or delete it</span>
           </div>
         </div>
-      </div>
-
-      {/* Engine Parameters */}
-      <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-5">
-        <div className="flex items-center space-x-2.5">
-          <Sliders className="w-5 h-5 text-cyan-400" />
-          <h2 className="text-sm font-semibold text-slate-200">Static Analysis & Engine Limits</h2>
-        </div>
-
-        <div className="space-y-4 text-xs">
-          <div>
-            <label className="block text-slate-300 font-medium mb-1">Google Gemini Remediation Model</label>
-            <select
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
-            >
-              <option value="models/gemini-2.5-flash">models/gemini-2.5-flash (Fast, Low Latency, Accurate)</option>
-              <option value="models/gemini-2.5-pro">models/gemini-2.5-pro (Deep Reasoning & Refactoring)</option>
-              <option value="models/gemini-3.8-flash">models/gemini-3.8-flash (Latest Generation)</option>
-            </select>
-          </div>
-
-          <div>
-            <div className="flex justify-between mb-1">
-              <label className="text-slate-300 font-medium">Max Individual Python File Size ({maxFileSizeKb} KB)</label>
-              <span className="font-mono text-slate-400">{maxFileSizeKb} KB</span>
-            </div>
-            <input
-              type="range"
-              min="50"
-              max="1000"
-              step="25"
-              value={maxFileSizeKb}
-              onChange={(e) => setMaxFileSizeKb(Number(e.target.value))}
-              className="w-full accent-cyan-500 cursor-pointer"
-            />
-            <p className="text-[11px] text-slate-500 mt-0.5">Files larger than this limit are skipped with an ingestion warning.</p>
-          </div>
-
-          <div>
-            <div className="flex justify-between mb-1">
-              <label className="text-slate-300 font-medium">Max Scan Timeout ({maxScanTimeSec}s)</label>
-              <span className="font-mono text-slate-400">{maxScanTimeSec}s</span>
-            </div>
-            <input
-              type="range"
-              min="15"
-              max="180"
-              step="5"
-              value={maxScanTimeSec}
-              onChange={(e) => setMaxScanTimeSec(Number(e.target.value))}
-              className="w-full accent-cyan-500 cursor-pointer"
-            />
-          </div>
-        </div>
-
-        {currentUser && (
-          <div className="pt-3 border-t border-slate-800 flex justify-end">
-            <button
-              onClick={handleSave}
-              disabled={isSaving}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 text-white text-xs font-semibold shadow-md shadow-cyan-600/20 flex items-center space-x-1.5 transition-all cursor-pointer disabled:opacity-50"
-            >
-              {savedSuccess ? (
-                <>
-                  <Check className="w-4 h-4 text-emerald-300" />
-                  <span>Preferences Saved to Firestore</span>
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4" />
-                  <span>{isSaving ? 'Saving...' : 'Save Preferences'}</span>
-                </>
-              )}
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -7,13 +7,21 @@ coverage/
 __pycache__/
 *.py[cod]
 *$py.class
-.env*
-!.env.example
 .pytest_cache/
 .coverage
 htmlcov/
+.venv/
+venv/
+
+# Secrets: environment files and service-account keys must never be committed.
+.env
+.env.*
+!.env.example
+secrets/
 *.service-account.json
 firebase-service-account*.json
-.env
-.env.local
-secrets/
+*-firebase-adminsdk-*.json
+
+# Local Firebase emulator / Data Connect state
+dataconnect/.dataconnect/
+.firebase/

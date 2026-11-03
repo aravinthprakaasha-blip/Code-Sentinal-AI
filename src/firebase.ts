@@ -40,6 +40,7 @@ const app = initializeApp(firebaseConfig);
 
 // CRITICAL: Must pass the firestoreDatabaseId from firebaseConfig
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
+export const firebaseProjectId = firebaseConfig.projectId;
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 

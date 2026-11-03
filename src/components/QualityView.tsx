@@ -37,7 +37,7 @@ export const QualityView: React.FC<QualityViewProps> = ({ currentScan }) => {
           <span>Code Quality & Maintainability</span>
         </h1>
         <p className="text-xs text-slate-400 mt-1">
-          Python AST complexity, function length, and finding-density indicators from the backend analysis.
+          Complexity, function length and finding-density indicators from the backend analysis (complexity metrics are computed for Python files).
         </p>
       </div>
 
